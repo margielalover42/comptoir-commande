@@ -1,6 +1,6 @@
 # Spec — Commande au comptoir (Le Comptoir Sushi 36)
 
-*Status: awaiting review. No code has been written.*
+*Status: built and running. 137 tests passing.*
 
 ## 1. Context
 
@@ -24,7 +24,8 @@ Out of scope, unchanged: no POS or payment-terminal integration, no accounts, no
 | Runtime | **Node 24+, zero runtime dependencies** | `node:http`, `node:sqlite`, `node:test` are all built in. Same language as the page's own JavaScript, so the menu is *one* file shared by page and server instead of two copies that drift. |
 | Menu sheet | **Becomes the ordering menu** | One menu, no "which screen am I on". The existing design — bamboo planks, section plates, FR/EN toggle — is kept; each dish line gains a stepper. |
 | Staff screen | **Unguessable URL, no PIN** | Plus `noindex` and `no-referrer` headers so the address can't leak through search engines or referrer headers, and structured so a PIN is a one-line addition later. Residual risk, stated once: anyone who obtains the link can read the day's orders and trigger reprints. |
-| Order numbers | **Server-assigned daily sequence, `#1`–`#999`, reset 04:00** | "Trente-sept" is easy to say across a counter and easy to search. Server-assigned means no collisions — the demo's `Math.random()` gives two customers the same number roughly every 12 orders. Reset at 04:00, not midnight, so a late service doesn't roll over mid-shift. |
+| Order numbers | **Server-assigned, shuffled, `#100`–`#999`, never repeating within a service day** | Three digits is easy to say across a counter and easy to search. The order is scrambled so it doesn't read as a sequence, but it is a *permutation*, not a draw: each number is used once per day, so two customers can never share one. A true random draw over 900 values collides after roughly 37 orders — one lunch rush. Day starts at 04:00, not midnight, so a late service doesn't roll over mid-shift. |
+| Customer name | **Required, no phone or email** | Staff call either the name or the number, so the name earns its place on the ticket and the staff screen. Asked at the last moment, once the order is ready to send. It's the only free text in the system that reaches the printer, so it's bounded and stripped of control characters. |
 
 ## 3. User flow
 
@@ -32,15 +33,17 @@ Out of scope, unchanged: no POS or payment-terminal integration, no accounts, no
 
 1. Taps the NFC card → phone opens the site → taps **Commander**.
 2. The menu sheet opens exactly as today, but every dish has a `−  0  +` stepper. A bar pinned to the bottom shows `3 articles` and **Envoyer ma commande**, disabled while the cart is empty.
-3. Taps send. The button locks immediately and shows a spinner — it cannot be tapped twice.
-4. **Success:** a full-screen white confirmation (the demo's "ticket" screen, kept): a very large `#37`, the time, the item list, and a live status line:
+3. Taps send. A **review panel** lists every dish and quantity with a total — the last moment an error costs nothing, since a sent order prints in the kitchen within the second and cannot be recalled. **Modifier** goes back to the menu.
+4. Confirms. A panel asks for their first name — at the last moment, because nobody gives a name to browse a menu, but everybody accepts once the order is ready to go. The confirm button locks on tap and cannot be pressed twice. Going back one step returns to the review, not the menu.
+5. A **transition** shows a ticket sliding out of a printer while the order is sent, held for at least 1.4 s. A receipt that appeared instantly would look like nothing had happened; a failure, by contrast, interrupts it immediately rather than making the customer wait out a false suspense.
+6. **Success:** a full-screen receipt on light "paper" carrying the shop's logo, a very large `#137`, the name, the full order, the date and time, the instruction to come to the counter when name or number is called — highlighted as a whole sentence, since it is the one thing they must leave with — and a live status line:
    - `✓ Envoyée en cuisine` — printed, confirmed by the printer.
    - `Envoi en cuisine…` — in flight, still polling.
    - `⚠ La cuisine n'a pas reçu le ticket. Montrez ce numéro au comptoir.` — the printer did not confirm.
 
    The order number is shown **in all three cases**, because the order exists on the server regardless of what the paper did, and staff can serve it from the status screen either way.
-5. **Failure to submit at all** (no signal, server down): no number is invented. The screen says the order was not sent and offers **Réessayer**, keeping the cart intact.
-6. Walks to the counter, says "trente-sept", pays as usual.
+7. **Failure to submit at all** (no signal, server down): no number is invented. The screen says the order was not sent and offers **Réessayer**, keeping the cart intact.
+8. Hears their name or number called, walks to the counter, shows the screen, pays as usual.
 
 ### 3.2 Kitchen
 
@@ -49,6 +52,8 @@ The printer polls the server every few seconds. When an order is waiting it rece
 ### 3.3 Staff
 
 Open the status screen on the counter tablet. Today's orders, newest first, each showing number, time, items, and a print badge:
+
+Each row leads with the number and the customer's name, since staff call either one.
 
 - **IMPRIMÉ** (green) — the printer confirmed it.
 - **EN COURS** (grey) — sent, awaiting confirmation.
@@ -68,23 +73,23 @@ comptoir-commande/
 │  ├─ config.js            env vars + defaults, validated at boot
 │  ├─ order.js             pure: validate a submitted cart against the menu
 │  ├─ day.js               pure: service-day boundary (America/Toronto, 04:00)
+│  ├─ numero.js            pure: the shuffled, never-repeating day numbers
 │  ├─ ticket.js            pure: order → ePOS-Print XML
-│  ├─ store.js             SQLite: orders, print jobs, daily counter
-│  ├─ print-queue.js       claim / ack / timeout state machine (clock injected)
+│  ├─ store.js             SQLite: orders, print jobs, day offset
 │  ├─ epson-sdp.js         the two things the printer says, and our answers
-│  ├─ routes.js            HTTP routing
-│  └─ server.js            node:http wiring, static serving, menu injection
+│  └─ server.js            routing, node:http wiring, menu injection
 ├─ public/
 │  ├─ index.html           the page, now orderable
 │  └─ comptoir.html        staff status screen
 ├─ scripts/
-│  └─ fake-printer.js      polls like a real TM-m30, prints to the terminal
-└─ test/                   one file per src module + api + ui
+│  ├─ fake-printer.js      polls like a real TM-m30, prints to the terminal
+│  └─ build-static.js      a standalone page for static hosting
+└─ test/                   one file per src module, plus the full HTTP flow
 ```
 
 **One menu, one copy.** `src/menu.js` is the single source of truth. The server injects it into `index.html` at a `<!--MENU_JSON-->` marker on each request, so the page cannot drift from the validator or the ticket formatter. `npm run build:static` writes a filled copy if the page is ever needed standalone again.
 
-**Small functions, one job each.** The pure modules — `order`, `day`, `ticket`, `print-queue` — take their inputs as arguments and return values, with the clock passed in. That is what makes the timeout and day-rollover cases testable without waiting a minute or changing the system date.
+**Small functions, one job each.** The pure modules — `order`, `day`, `numero`, `ticket` — take their inputs as arguments and return values, with the clock passed in. That is what makes the timeout and day-rollover cases testable without waiting a minute or changing the system date.
 
 ## 5. Data model
 
@@ -195,7 +200,8 @@ Constraints the implementation must respect, from the manual:
        COMPTOIR SUSHI 36
           C U I S I N E
 
-            #37
+            #137
+           ÉLOÏSE
       mar. 22 sept. - 12h41
 --------------------------------
 2x  SAUMON FUME
@@ -211,6 +217,7 @@ Constraints the implementation must respect, from the manual:
 
 Three deliberate choices:
 
+- **The name is printed large, under the number.** Staff call one or the other, and both have to be readable at a glance on a ticket pinned to the pass.
 - **The ticket is always French**, whatever language the customer browsed in. It is read by the kitchen, and the names must match the words they use.
 - **`NON PAYÉ` is on every ticket.** Payment is manual and in person; a printed ticket must never be mistaken for a paid one.
 - **A reprint prints `*** RÉIMPRESSION ***` at the top**, so a reprinted ticket never becomes a second portion of food.
@@ -242,7 +249,8 @@ The rule throughout: **never show a number for an order the server did not accep
 - *Bad input:* unknown id, qty 0 / −1 / 21, 41 items, empty cart, malformed JSON, 33 KB body, wrong content type, missing `clientOrderId`, missing fields → correct status code, French message, no crash.
 - *Printer not responding:* no poll → offline; job times out → `echec` + one retry; ack `success="false"` → `echec` with the code preserved; reprint re-queues and the XML carries the `RÉIMPRESSION` banner; empty answer when the queue is empty.
 - *Duplicate submissions:* same `clientOrderId` twice → one row, one job, same number returned; two simultaneous submits → exactly one ticket; double-tap in jsdom → one `fetch`.
-- *Order numbers:* sequential; unique per day; resets across the 04:00 boundary; 999 wraps safely; concurrent submits never collide.
+- *Order numbers:* every one of the 900 is used exactly once per day, checked exhaustively; never consecutive; a different order each day; the day's shuffle survives a server restart; past 900 orders it continues into four digits rather than repeating; resets across the 04:00 boundary; concurrent submits never collide.
+- *Customer name:* required; trimmed and de-spaced; accents, hyphens and apostrophes kept; control characters stripped; 30 characters maximum; empty or non-text refused.
 - *Ticket:* snapshot of the XML; grouping by section; long names wrap; accents in both modes; reprint banner; `NON PAYÉ` always present; `printjobid` always ≤30 alphanumeric.
 - *Menu:* every dish has a unique non-empty id; ids match what the page renders.
 - *UI (jsdom):* steppers add/remove; send disabled on empty cart; double-tap guarded; submit failure keeps the cart; success screen shows the server's number, never a local one.
@@ -253,7 +261,7 @@ The rule throughout: **never show a number for an order the server did not accep
 2. **Extras** (gingembre, wasabi, sauce épicée, feuille de soya, feuille de riz) become orderable lines rather than decorative chips.
 3. **Shop hours** go in `config.js` — placeholder values to be replaced with the real ones. Outside them, ordering is closed.
 4. **No allergy/notes field in v1.** The customer speaks to staff at the counter to pay anyway, and free text on a kitchen ticket is a misreading risk. Easy to add later.
-5. **Orders are purged after 7 days.** No name, phone, or email is ever collected.
+5. **Orders are purged after 7 days**, names included. No phone, email or any other contact detail is ever collected.
 
 ## 12. Build order
 

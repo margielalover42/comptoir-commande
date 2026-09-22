@@ -1,8 +1,10 @@
 # Commande au comptoir — Le Comptoir Sushi 36
 
-Le client compose sa commande sur son téléphone, l'envoie, et le ticket sort
-en cuisine immédiatement. Il garde un numéro à l'écran, le dit au comptoir, et
-paie comme d'habitude. Aucun compte, aucun paiement en ligne, aucun SMS.
+Le client compose sa commande sur son téléphone, donne son prénom, et le
+ticket sort en cuisine immédiatement. Il garde un reçu à l'écran avec son
+numéro ; quand le comptoir appelle son prénom ou son numéro, il se présente,
+montre l'écran et paie comme d'habitude. Aucun compte, aucun paiement en
+ligne, aucun SMS.
 
 Zéro dépendance à installer. Node 24 ou plus récent suffit.
 
@@ -40,8 +42,9 @@ node scripts/fake-printer.js --muette                        # imprime, ne répo
 npm test
 ```
 
-114 tests, sans dépendance. Ils couvrent le parcours normal, les mauvaises
-entrées, l'imprimante en panne, muette ou débranchée, et les doubles envois.
+137 tests, sans dépendance. Ils couvrent le parcours normal, les mauvaises
+entrées, l'imprimante en panne, muette ou débranchée, les doubles envois, et
+l'unicité des numéros — vérifiée sur les 900 valeurs, pas par échantillon.
 
 ---
 
@@ -60,6 +63,59 @@ client voit et ce que la cuisine reçoit.
 
 Renommer un plat est sans danger. **Ne jamais changer un `id`** : c'est lui
 que les téléphones déjà ouverts renverront.
+
+---
+
+## La galerie
+
+Un seul script installe un dossier de photos :
+
+```bash
+powershell -File scripts/preparer-photos.ps1 -Source "C:\chemin\vers\photos"
+```
+
+Pour fixer l'ordre et les libellés :
+
+```bash
+powershell -File scripts/preparer-photos.ps1 -Source "..." -Noms poke-bol-duo,nigiri,tartare
+```
+
+L'ordre d'affichage est celui des fichiers sources triés par nom. Vos
+originaux ne sont **jamais** modifiés.
+
+### Deux tailles, et pourquoi
+
+Une photo de studio pèse 7 à 9 Mo. Une seule taille ne peut pas servir les
+deux usages, alors le script en produit deux :
+
+| | Taille | Sert à |
+|---|---|---|
+| `public/galerie/vignettes/` | 1600 px | la grille — neuf d'un coup, ~1 Mo au total |
+| `public/galerie/` | 2800 px, qualité 93 | l'agrandissement — une seule à la fois |
+
+La grille reste rapide sur un téléphone en données mobiles, et la photo
+plein écran garde sa finesse. Sans cette séparation il faudrait choisir :
+une galerie lente, ou des photos molles.
+
+Une photo déposée à la main dans `public/galerie/`, sans vignette, s'affiche
+quand même — elle sera seulement plus lourde à charger.
+
+Le nom du fichier sert de description pour les lecteurs d'écran :
+`03-poke-bol-duo.jpg` devient « poke bol duo ».
+
+Formats acceptés en entrée : `.png`, `.jpg`. Dossier vide : le bouton
+« Galerie » ne s'affiche pas du tout, plutôt que d'ouvrir sur du vide.
+
+### L'affichage
+
+Sur téléphone, les neuf photos forment un 3×3 qui occupe **tout l'écran**,
+sans défilement — vérifié sans débordement sur iPhone SE, 14 et 15 Pro Max.
+Au-delà, la grille repasse en vignettes carrées centrées.
+
+Chaque photo porte un encadrement en deux traits : un filet sombre sur
+l'arête, puis un trait blanc en retrait à l'intérieur, comme un
+passe-partout. Le fond est un noir mat très légèrement dégradé — la matière
+des assiettes sur les photos.
 
 ---
 
@@ -157,8 +213,10 @@ node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"
 
 ```
 src/menu.js        la carte — la seule copie
-src/order.js       valide un panier reçu d'un téléphone
+src/galerie.js     les photos du dossier public/galerie/
+src/order.js       valide un panier et un prénom reçus d'un téléphone
 src/day.js         la journée de service (bascule à 04h00)
+src/numero.js      les numéros mélangés, jamais deux fois le même
 src/ticket.js      une commande → le XML du ticket
 src/store.js       SQLite : commandes, travaux d'impression
 src/epson-sdp.js   le dialecte de l'imprimante
@@ -167,7 +225,7 @@ public/index.html  la page du client
 public/comptoir.html  l'écran du comptoir
 ```
 
-Trois règles tiennent l'ensemble :
+Quatre règles tiennent l'ensemble :
 
 **Le numéro vient du serveur.** La page n'en invente jamais. Si l'envoi
 échoue, le client voit qu'il a échoué — pas un numéro que personne ne
@@ -179,14 +237,22 @@ déclaré échoué et réessayé une fois.
 
 **Rien de ce qui vient du téléphone n'est cru sur parole.** Les noms de plats
 sont relus dans `src/menu.js` à partir de leur identifiant, jamais repris de
-la requête : personne ne peut faire imprimer son propre texte en cuisine.
+la requête. Le prénom est le seul texte libre qui atteigne l'imprimante : il
+est borné à 30 caractères et débarrassé de ses caractères de contrôle, qu'une
+imprimante thermique interpréterait comme des commandes.
+
+**Un numéro n'est jamais servi deux fois dans la journée.** Les numéros ont
+l'air tirés au sort, mais ils ne le sont pas : on parcourt les 900 valeurs
+dans un ordre mélangé. Un vrai tirage donnerait deux clients avec le même
+numéro au bout d'une quarantaine de commandes — un seul midi.
 
 ### Le ticket
 
 ```
        COMPTOIR SUSHI 36
           C U I S I N E
-            #37
+            #137
+           ÉLOÏSE
       mar. 22 sept. - 12h41
 ------------------------------------
 2x  SAUMON FUMÉ
@@ -198,6 +264,10 @@ la requête : personne ne peut faire imprimer son propre texte en cuisine.
             3 articles
       ** NON PAYE - ENCAISSER **
 ```
+
+Le prénom est imprimé en gros sous le numéro : le comptoir appelle l'un ou
+l'autre, et les deux doivent se lire d'un coup d'œil sur un ticket punaisé au
+passe-plat.
 
 Toujours en français, même si le client a commandé en anglais : c'est la
 cuisine qui le lit. La section figure sous chaque plat parce que « Saumon »
