@@ -1,0 +1,48 @@
+# Modele de deploiement pour Render (render.com).
+#
+# Un clic sur "New +" -> "Blueprint" dans le tableau de bord Render, en
+# pointant sur ce depot, lit ce fichier et cree le service tout configure :
+# plus rien a remplir a la main que le nom.
+#
+# POURQUOI UN DISQUE PERSISTANT
+# Sans lui, le fichier SQLite des commandes serait efface a chaque
+# redemarrage du service — et Render redemarre les services regulierement
+# (mise a jour, redeploiement). Le disque garde commandes.db au meme
+# endroit d'une fois sur l'autre.
+#
+# POURQUOI LE PLAN "starter" ET NON "free"
+# Render refuse d'attacher un disque persistant a un service gratuit. Et
+# meme sans cela : l'imprimante interroge le serveur toutes les quelques
+# secondes, toute la journee — un usage reel et continu, pas une
+# demonstration. Le plan gratuit ne convient pas a un systeme dont la
+# cuisine depend.
+#
+# LES DEUX SECRETS SONT GENERES AUTOMATIQUEMENT (generateValue: true) :
+# Render tire une valeur aleatoire de 256 bits a la creation. Vous n'avez
+# rien a inventer ; le guide d'installation explique ou aller les lire une
+# fois le service cree.
+
+services:
+  - type: web
+    name: comptoir-commande
+    runtime: node
+    plan: starter
+    region: oregon
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/etat
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DB_PATH
+        value: /var/data/commandes.db
+      - key: TIMEZONE
+        value: America/Toronto
+      - key: PRINTER_SECRET
+        generateValue: true
+      - key: STAFF_SECRET
+        generateValue: true
+    disk:
+      name: donnees
+      mountPath: /var/data
+      sizeGB: 1
