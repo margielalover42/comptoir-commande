@@ -1,0 +1,16 @@
+{
+  "name": "comptoir-commande",
+  "version": "1.0.0",
+  "description": "Prise de commande au comptoir — Le Comptoir Sushi 36",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test",
+    "fake-printer": "node scripts/fake-printer.js",
+    "build:static": "node scripts/build-static.js"
+  },
+  "private": true
+}

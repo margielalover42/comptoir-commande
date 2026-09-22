@@ -1,0 +1,20 @@
+# Netlify sert la PAGE. Le serveur de commandes tourne ailleurs : il garde
+# les commandes et c'est lui que l'imprimante interroge, deux choses qu'un
+# hebergeur statique ne sait pas faire.
+#
+# 1. node scripts/build-static.js --api=https://ADRESSE-DU-SERVEUR
+# 2. deployer ce depot sur Netlify (il publie dist/)
+# 3. cote serveur : ALLOWED_ORIGIN=https://ADRESSE-DE-CETTE-PAGE
+
+[build]
+  command = "node scripts/build-static.js"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "24"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "no-referrer"
