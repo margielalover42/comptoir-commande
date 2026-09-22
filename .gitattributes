@@ -1,0 +1,10 @@
+# Les fichiers sont stockes en LF dans le depot, quel que soit le poste.
+# Sans cela, Windows convertit en CRLF et un simple enregistrement fait
+# apparaitre le fichier entier comme modifie : impossible de relire un
+# diff, donc impossible de revenir en arriere sereinement.
+* text=auto
+
+# Binaire : jamais de conversion.
+*.png binary
+*.webp binary
+*.db  binary
