@@ -35,9 +35,40 @@ export function validerCommande(corps) {
 
   const clientOrderId = validerCleClient(corps.clientOrderId);
   const langue = corps.lang === 'en' ? 'en' : 'fr';
+  const nom = validerNom(corps.nom);
   const articles = validerArticles(corps.items, langue);
 
-  return { clientOrderId, langue, articles };
+  return { clientOrderId, langue, nom, articles };
+}
+
+/**
+ * Le prenom du client : c'est lui que le comptoir appellera.
+ *
+ * ATTENTION — c'est le SEUL texte libre du systeme qui finisse sur le ticket
+ * de cuisine. Tout le reste est relu dans la carte. On le borne donc
+ * strictement : longueur, caracteres de controle, espaces multiples. Le
+ * ticket etant du XML, ticket.js echappe ensuite ce qui doit l'etre.
+ */
+function validerNom(valeur) {
+  if (typeof valeur !== 'string') {
+    throw new ErreurCommande('Entrez votre prénom.');
+  }
+
+  // Les caracteres de controle n'ont rien a faire sur une imprimante : ils
+  // sont interpretes comme des commandes, pas comme du texte.
+  const propre = valeur
+    .replace(/[\p{Cc}\p{Cf}]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (propre.length === 0) {
+    throw new ErreurCommande('Entrez votre prénom.');
+  }
+  if (propre.length > config.nomMax) {
+    throw new ErreurCommande(`Prénom trop long (${config.nomMax} caractères maximum).`);
+  }
+
+  return propre;
 }
 
 /**

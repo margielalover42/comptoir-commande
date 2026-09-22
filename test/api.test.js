@@ -15,6 +15,7 @@ import { once } from 'node:events';
 import { creerApp } from '../src/server.js';
 import { ouvrirBase, ETAT } from '../src/store.js';
 import { config } from '../src/config.js';
+import { listerPhotos } from '../src/galerie.js';
 
 const IMPRIMANTE = `/imprimante/${config.secretImprimante}`;
 const COMPTOIR = `/comptoir/${config.secretComptoir}`;
@@ -42,11 +43,11 @@ afterEach(async () => {
 
 // ------------------------------------------------------------------- outils
 
-function commander(items, cle = 'cle-test', lang = 'fr') {
+function commander(items, cle = 'cle-test', lang = 'fr', nom = 'Thomas') {
   return fetch(base + '/api/commandes', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ clientOrderId: cle, lang, items }),
+    body: JSON.stringify({ clientOrderId: cle, lang, nom, items }),
   });
 }
 
@@ -89,14 +90,16 @@ test('parcours complet : commander, imprimer, confirmer, voir au comptoir', asyn
   assert.equal(reponse.status, 201);
 
   const commande = await reponse.json();
-  assert.equal(commande.numero, 1);
+  assert.ok(commande.numero >= 100 && commande.numero <= 999, 'numero a trois chiffres');
+  assert.equal(commande.nom, 'Thomas');
   assert.equal(commande.total, 3);
   assert.equal(commande.etatImpression, ETAT.EN_ATTENTE);
 
   // 2. L'imprimante vient chercher le ticket.
   const xml = await interroger();
   assert.match(xml, /<PrintRequestInfo Version="2\.00">/);
-  assert.match(xml, /#1/);
+  assert.match(xml, new RegExp(`#${commande.numero}`));
+  assert.match(xml, /THOMAS/, 'le comptoir appelle le prenom');
   assert.match(xml, /2x THON/);
   assert.match(xml, /NON PAYE/);
 
@@ -110,7 +113,8 @@ test('parcours complet : commander, imprimer, confirmer, voir au comptoir', asyn
   // 5. Le comptoir la voit imprimee.
   const vue = await auComptoir();
   assert.equal(vue.commandes.length, 1);
-  assert.equal(vue.commandes[0].numero, 1);
+  assert.equal(vue.commandes[0].numero, commande.numero);
+  assert.equal(vue.commandes[0].nom, 'Thomas');
   assert.equal(vue.commandes[0].etatImpression, ETAT.IMPRIMEE);
   assert.equal(vue.imprimanteEnLigne, true);
 });
@@ -132,10 +136,14 @@ test('rien a imprimer : la reponse est vide', async () => {
   assert.equal(await interroger(), '');
 });
 
-test('les numeros se suivent', async () => {
-  assert.equal((await (await commander(PANIER, 'a')).json()).numero, 1);
-  assert.equal((await (await commander(PANIER, 'b')).json()).numero, 2);
-  assert.equal((await (await commander(PANIER, 'c')).json()).numero, 3);
+test('les numeros sont melanges mais jamais repetes', async () => {
+  const numeros = [];
+  for (const cle of ['a', 'b', 'c', 'd']) {
+    numeros.push((await (await commander(PANIER, cle)).json()).numero);
+  }
+
+  assert.equal(new Set(numeros).size, 4, 'aucun numero servi deux fois');
+  for (const n of numeros) assert.ok(n >= 100 && n <= 999, `hors plage : ${n}`);
 });
 
 // ====================================================== LES DOUBLES ENVOIS
@@ -295,7 +303,7 @@ test('corps trop volumineux : 413', async () => {
   const r = await fetch(base + '/api/commandes', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ clientOrderId: 'x', items: [], bourrage: 'A'.repeat(40_000) }),
+    body: JSON.stringify({ clientOrderId: 'x', nom: 'Thomas', items: [], bourrage: 'A'.repeat(40_000) }),
   }).catch(() => ({ status: 413 })); // la connexion peut etre coupee net
 
   assert.ok(r.status === 413 || r.status === 400);
@@ -377,6 +385,76 @@ test('suspendre les commandes ferme la porte, reprendre la rouvre', async () => 
   assert.equal((await commander(PANIER, 'apres-pause')).status, 201);
 });
 
+// ================================================================ LA GALERIE
+
+test('sert une photo de la galerie avec le bon type', async () => {
+  const photos = listerPhotos();
+  if (photos.length === 0) return; // dossier vide : rien a servir
+
+  const r = await fetch(`${base}/galerie/${encodeURIComponent(photos[0])}`);
+
+  assert.equal(r.status, 200);
+  assert.match(r.headers.get('content-type'), /^image\//);
+  assert.ok(Number(r.headers.get('content-length')) > 0);
+});
+
+test('la grille recoit une vignette bien plus legere que la pleine resolution', async () => {
+  const photos = listerPhotos();
+  if (photos.length === 0) return;
+
+  const nom = encodeURIComponent(photos[0]);
+  const vignette = await fetch(`${base}/galerie/vignettes/${nom}`);
+  const pleine = await fetch(`${base}/galerie/${nom}`);
+
+  assert.equal(vignette.status, 200);
+  assert.equal(pleine.status, 200);
+
+  const poidsVignette = Number(vignette.headers.get('content-length'));
+  const poidsPleine = Number(pleine.headers.get('content-length'));
+
+  // Tout l'interet des deux tailles tient dans cet ecart : si la vignette
+  // cessait d'etre nettement plus legere, la grille redeviendrait lente.
+  assert.ok(poidsVignette < poidsPleine,
+    `vignette ${poidsVignette} >= pleine ${poidsPleine}`);
+});
+
+test('une vignette manquante retombe sur la photo elle-meme', async () => {
+  // Une photo deposee a la main, sans passer par le script de preparation,
+  // doit quand meme s'afficher.
+  const photos = listerPhotos();
+  if (photos.length === 0) return;
+
+  const r = await fetch(`${base}/galerie/vignettes/${encodeURIComponent(photos[0])}`);
+  assert.equal(r.status, 200);
+  assert.match(r.headers.get('content-type'), /^image\//);
+});
+
+test('la route des photos ne laisse pas sortir du dossier', async () => {
+  // C'est le seul endroit ou un nom venu du navigateur atteint le disque.
+  const tentatives = [
+    '/galerie/../../package.json',
+    '/galerie/..%2F..%2Fpackage.json',
+    '/galerie/%2e%2e%2f%2e%2e%2fpackage.json',
+    '/galerie/../src/config.js',
+    '/galerie/..\\..\\package.json',
+    '/galerie/inexistante.jpg',
+  ];
+
+  for (const chemin of tentatives) {
+    const r = await fetch(base + chemin);
+    assert.equal(r.status, 404, chemin);
+
+    const corps = await r.text();
+    assert.doesNotMatch(corps, /comptoir-commande|secretComptoir|PRINTER_SECRET/,
+      `${chemin} a laisse fuiter un fichier du projet`);
+  }
+});
+
+test('la liste des photos est injectee dans la page', async () => {
+  const html = await (await fetch(base + '/')).text();
+  assert.match(html, /window\.COMPTOIR_GALERIE=/);
+});
+
 // ================================================================= LA PAGE
 
 test('la page du client est servie avec la carte injectee', async () => {
@@ -389,7 +467,8 @@ test('la page du client est servie avec la carte injectee', async () => {
 
 test('la carte injectee est celle que le serveur valide', async () => {
   const html = await (await fetch(base + '/')).text();
-  const json = html.match(/window\.COMPTOIR_MENU=(\[.*?\]);<\/script>/s)[1];
+  // La carte n'est plus seule dans sa balise : la galerie la suit.
+  const json = html.match(/window\.COMPTOIR_MENU=(\[.*?\]);window\./s)[1];
   const carte = JSON.parse(json.replace(/\\u003c/g, '<'));
 
   // Un plat pris au hasard dans la page doit etre accepte par le serveur.

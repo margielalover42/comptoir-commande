@@ -253,7 +253,11 @@ body{
 /* Une seule colonne : le lien social prend toute la largeur, comme le
    bouton du menu, et reste donc centre sous lui. La grille en deux
    colonnes datait de l'epoque ou il y avait Instagram ET Facebook. */
-.liens{display:grid;grid-template-columns:1fr;gap:9px;margin-top:clamp(10px,2.8vw,13px)}
+/* Deux colonnes quand il y a la galerie ET Facebook, une seule sinon.
+   `auto-fit` s'en charge tout seul : si la galerie est vide, son bouton
+   n'est pas rendu et Facebook reprend toute la largeur. */
+.liens{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
+  gap:9px;margin-top:clamp(10px,2.8vw,13px)}
 .lien{
   width:100%;min-height:clamp(48px,12.5vw,56px);border-radius:12px;
   border:1px solid var(--ligne);background:rgba(250,250,250,.05);
@@ -266,6 +270,9 @@ body{
   transition:transform .2s var(--doux),background .24s ease,border-color .24s ease;
 }
 .lien svg{width:16px;height:16px;flex:none;fill:var(--bambou-clair)}
+/* La galerie est un <button>, pas un <a> : il faut lui retirer ce que le
+   navigateur impose aux boutons et qu'il n'herite pas. */
+button.lien{cursor:pointer;font-family:Oswald,sans-serif;padding:0;appearance:none}
 .lien:active{transform:scale(.968);background:rgba(237,31,39,.12);border-color:rgba(237,31,39,.45)}
 
 footer{
@@ -561,6 +568,11 @@ footer a{color:var(--creme-faint);text-decoration:none;
     drop-shadow(0 1px 0 rgba(255,236,200,.20));
   animation:assietteIn .52s var(--ressort) both;
   will-change:transform;
+  /* L'assiette deborde du bandeau et retombe SUR le premier plat de la
+     section — donc sur son bouton « + », dont elle mangeait 41 % de la
+     surface tactile. Elle est purement decorative : elle ne doit jamais
+     intercepter un doigt. */
+  pointer-events:none;
 }
 @keyframes assietteIn{
   from{opacity:0;transform:translateY(-50%) scale(.86)}
@@ -697,14 +709,25 @@ button:focus-visible,a:focus-visible{
 .plat-txt .plat{margin-top:0}
 .plat-txt .plat-d{margin-top:2px}
 
-.qte{display:flex;align-items:center;flex:none;overflow:hidden;
+/* Pas d'`overflow:hidden` : il rognait les coins des boutons, et un doigt
+   pose sur le coin arrondi du « + » ne touchait plus rien. Chaque bouton
+   porte donc son propre arrondi. */
+.qte{display:flex;align-items:center;flex:none;
   border:1px solid rgba(239,206,148,.28);border-radius:999px;
   background:rgba(0,0,0,.34)}
 /* 44px : la cible tactile minimale confortable sur un telephone. */
 .qte button{appearance:none;border:0;background:transparent;cursor:pointer;
   width:44px;height:44px;line-height:1;font-size:19px;color:#EFCE94;
   display:flex;align-items:center;justify-content:center;
+  border-radius:999px;
+  /* Un doigt vise mal : on elargit la zone sensible vers l'exterieur sans
+     changer ce qui est dessine. */
+  position:relative;z-index:1;
   transition:background .18s var(--doux)}
+.qte .plus::after,.qte .moins::after{
+  content:"";position:absolute;top:-6px;bottom:-6px;width:calc(100% + 10px)}
+.qte .plus::after{left:-2px}
+.qte .moins::after{right:-2px}
 .qte button:active{background:rgba(237,31,39,.26)}
 .qte .v{min-width:22px;text-align:center;font-variant-numeric:tabular-nums;
   font-family:Jost,sans-serif;font-weight:600;font-size:14px;color:var(--creme)}
@@ -742,39 +765,335 @@ button:focus-visible,a:focus-visible{
 .barre .avis:empty{display:none}
 
 /* ======================================================================
-   L'ECRAN DE CONFIRMATION — en BLANC, volontairement.
-   C'est le recu du client. Il doit se lire d'un coup d'oeil, de biais, a
-   bout de bras, dans une file. Le fond sombre de la carte est joli mais
-   moins lisible en plein jour ; ici la lisibilite passe avant le style.
+   LA GALERIE
+   Le quadrillage clair est la piece maitresse : sans lui, des photos de
+   nourriture posees bord a bord se fondent en une bouillie de couleurs.
+   Chaque filet redonne a chaque plat son cadre.
    ====================================================================== */
-#recu{position:fixed;inset:0;z-index:95;display:none;background:#FFF;color:#111;
-  overflow-y:auto;padding:26px 18px calc(20px + env(safe-area-inset-bottom,0px))}
+/* Un noir mat, legerement metallique : la meme matiere que les assiettes
+   des photos. Un noir pur ecraserait les ombres portees des cliches ; ce
+   degrade tres sourd leur laisse de quoi se detacher. */
+#galerie{position:fixed;inset:0;z-index:94;display:none;flex-direction:column;
+  background:
+    radial-gradient(120% 70% at 50% -10%, rgba(255,255,255,.05), transparent 60%),
+    linear-gradient(176deg,#141416 0%,#0C0C0E 52%,#070708 100%)}
+#galerie.ouvert{display:flex}
+/* Sur iOS, un calque plein ecran n'empeche pas la page DESSOUS de defiler :
+   un doigt qui glisse sur la galerie fait rebondir le fond. On bloque donc
+   le document tant qu'un calque est ouvert. */
+html.calque-ouvert,html.calque-ouvert body{overflow:hidden;
+  overscroll-behavior:none;touch-action:none}
+.gal-barre{flex:none;display:flex;align-items:center;justify-content:space-between;
+  gap:10px;padding:clamp(12px,3.2vw,16px) clamp(13px,3.6vw,18px);
+  padding-top:calc(clamp(12px,3.2vw,16px) + env(safe-area-inset-top,0px));
+  border-bottom:1px solid rgba(250,250,250,.09);background:rgba(10,10,12,.96)}
+.gal-titre{font-family:Oswald,sans-serif;font-weight:500;font-size:clamp(15px,4vw,18px);
+  letter-spacing:.17em;text-transform:uppercase;color:var(--creme)}
+.gal-defile{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain;
+  padding:clamp(10px,3vw,16px) clamp(8px,2.4vw,16px)
+          calc(clamp(14px,4vw,20px) + env(safe-area-inset-bottom,0px))}
+
+/* Deux colonnes sur un telephone, davantage des qu'il y a la place : une
+   photo de plat sous 150 px ne montre plus rien. */
+/* TROIS COLONNES, toujours : neuf photos forment un carre 3x3 net, sur un
+   telephone comme sur un ecran. Plafonnee en largeur pour qu'un grand ecran
+   ne les etire pas au-dela du raisonnable. */
+.gal-grille{display:grid;gap:clamp(7px,2vw,12px);max-width:940px;margin:0 auto;
+  grid-template-columns:repeat(3,1fr)}
+/* L'ENCADREMENT, en deux traits — comme une photo sous passe-partout :
+   un filet sombre sur l'arete meme du cliche, puis un trait blanc pose en
+   RETRAIT a l'interieur. C'est ce second trait qui fait le cadre ; seul,
+   le premier ne serait qu'une bordure. */
+.gal-case{position:relative;display:block;padding:0;cursor:pointer;
+  aspect-ratio:1;overflow:hidden;
+  border:1px solid rgba(255,255,255,.10);
+  background:#0C0C0E;
+  transition:transform .22s var(--doux)}
+.gal-case::after{
+  content:"";position:absolute;z-index:2;pointer-events:none;
+  inset:clamp(5px,1.7vw,9px);
+  border:1px solid rgba(255,255,255,.82);
+}
+/* Les photos sont cadrees large, l'assiette flottant au centre d'un grand
+   fond blanc. Recadrees telles quelles en carre, les plats paraissent
+   minuscules. On zoome donc un peu pour manger la marge inutile — sans
+   toucher au fichier, qui reste entier pour l'agrandissement. */
+.gal-case img{width:100%;height:100%;object-fit:cover;display:block;
+  transform:scale(1.22);transform-origin:center;
+  transition:transform .4s var(--doux)}
+.gal-case:active{transform:scale(.97)}
+@media (hover:hover){ .gal-case:hover img{transform:scale(1.3)} }
+
+/* --- la photo en grand --- */
+#loupe{position:fixed;inset:0;z-index:98;display:none;
+  align-items:center;justify-content:center;
+  background:rgba(8,7,7,.97);
+  padding:56px 12px calc(56px + env(safe-area-inset-bottom,0px))}
+#loupe.ouvert{display:flex}
+#loupeImg{max-width:100%;max-height:100%;object-fit:contain;display:block;
+  border:3px solid rgba(250,250,250,.9);
+  box-shadow:0 20px 60px -20px rgba(0,0,0,.95);
+  animation:loupeIn .26s var(--doux)}
+@keyframes loupeIn{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
+.loupe-fermer{position:absolute;top:calc(12px + env(safe-area-inset-top,0px));right:12px;
+  width:44px;height:44px;border-radius:999px;cursor:pointer;z-index:2;
+  display:flex;align-items:center;justify-content:center;
+  border:1px solid var(--ligne);background:rgba(0,0,0,.6);color:var(--creme);font-size:15px}
+.loupe-fleche{position:absolute;top:50%;transform:translateY(-50%);
+  width:48px;height:48px;border-radius:999px;cursor:pointer;z-index:2;
+  display:flex;align-items:center;justify-content:center;
+  border:1px solid var(--ligne);background:rgba(0,0,0,.55);color:var(--creme);
+  font-size:30px;line-height:1;padding-bottom:4px}
+.loupe-fleche.gauche{left:10px}
+.loupe-fleche.droite{right:10px}
+.loupe-fleche:active{background:rgba(237,31,39,.32)}
+.loupe-compte{position:absolute;bottom:calc(16px + env(safe-area-inset-bottom,0px));
+  left:0;right:0;text-align:center;font-family:Jost,sans-serif;font-size:12px;
+  letter-spacing:.14em;color:var(--creme-dim);font-variant-numeric:tabular-nums}
+
+/* SUR UN TELEPHONE : le 3x3 occupe tout l'ecran, sans defilement ni marge.
+   Les neuf photos se voient d'un seul coup d'oeil, bord a bord, et les
+   traits blancs en retrait forment le quadrillage. Au-dela (tablette,
+   portable), on garde la grille centree en vignettes carrees. */
+@media (max-width:640px){
+  .gal-defile{padding:0;overflow:hidden;display:flex}
+  .gal-grille{max-width:none;width:100%;height:100%;gap:0;margin:0;
+    grid-template-columns:repeat(3,1fr);
+    grid-template-rows:repeat(3,1fr)}
+  /* La hauteur vient de la grille, plus du rapport 1:1. */
+  .gal-case{aspect-ratio:auto;border-width:0;
+    border-right:1px solid rgba(255,255,255,.10);
+    border-bottom:1px solid rgba(255,255,255,.10)}
+  .gal-case:nth-child(3n){border-right:0}
+  .gal-case:nth-child(n+7){border-bottom:0}
+}
+
+@media (prefers-reduced-motion:reduce){
+  .gal-case,.gal-case img,#loupeImg{transition:none!important;animation:none!important}
+}
+
+/* ======================================================================
+   LES PANNEAUX : relecture, puis prenom.
+   Meme habillage pour les deux — le client doit sentir qu'il avance dans
+   une seule sequence, pas qu'il saute d'un ecran a un autre.
+   ====================================================================== */
+#revue,#nomEtape{position:fixed;inset:0;z-index:96;display:none;
+  align-items:center;justify-content:center;padding:18px;
+  background:rgba(10,9,9,.80);backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px)}
+#revue.ouvert,#nomEtape.ouvert{display:flex}
+.panneau{position:relative;width:100%;max-width:380px;max-height:100%;
+  overflow-y:auto;overscroll-behavior:contain;
+  border-radius:18px;padding:26px 22px 20px;
+  border:1px solid rgba(239,206,148,.22);
+  background:linear-gradient(172deg,#221E1F,#141112);
+  box-shadow:0 30px 70px -26px rgba(0,0,0,.92);
+  animation:nomIn .34s var(--ressort)}
+@keyframes nomIn{from{opacity:0;transform:translateY(14px) scale(.97)}to{opacity:1;transform:none}}
+/* un filet rouge en haut, comme sur la carte */
+.nom-motif{position:absolute;top:0;left:0;right:0;height:3px;border-radius:18px 18px 0 0;
+  background:linear-gradient(90deg,transparent,var(--rouge),var(--bambou-clair),transparent)}
+.panneau h2{font-family:Oswald,sans-serif;font-weight:500;font-size:21px;
+  letter-spacing:.06em;text-transform:uppercase;text-align:center;color:var(--creme)}
+.panneau-quoi{margin-top:7px;text-align:center;font-family:Jost,sans-serif;font-weight:300;
+  font-size:12.5px;line-height:1.5;color:rgba(250,250,250,.62)}
+
+/* --- la relecture --- */
+.revue-liste{margin-top:18px;border-top:1px solid rgba(239,206,148,.18)}
+.revue-ligne{display:flex;align-items:flex-start;gap:12px;padding:11px 2px;
+  border-bottom:1px solid rgba(250,250,250,.07)}
+.revue-ligne b{flex:none;min-width:30px;font-family:Oswald,sans-serif;font-weight:500;
+  font-size:18px;color:var(--rouge-doux);font-variant-numeric:tabular-nums}
+.revue-ligne span{flex:1;min-width:0;font-family:Jost,sans-serif;font-weight:600;
+  font-size:14px;line-height:1.3;color:var(--creme)}
+.revue-ligne small{display:block;margin-top:2px;font-family:Jost,sans-serif;font-weight:300;
+  font-size:11px;color:rgba(250,250,250,.5)}
+.revue-total{display:flex;justify-content:space-between;align-items:baseline;
+  margin:14px 0 18px;padding-top:12px;border-top:2px solid rgba(239,206,148,.3);
+  font-family:Jost,sans-serif;font-size:12.5px;letter-spacing:.06em;
+  text-transform:uppercase;color:rgba(250,250,250,.6)}
+.revue-total b{font-family:Oswald,sans-serif;font-size:20px;font-weight:500;color:var(--creme)}
+
+.panneau-retour{margin-top:9px;width:100%;min-height:44px;cursor:pointer;
+  border:0;background:none;color:rgba(250,250,250,.5);
+  font-family:Jost,sans-serif;font-size:12.5px}
+
+/* ======================================================================
+   LA TRANSITION — un ticket qui sort de l'imprimante.
+   Elle montre ce qui se passe vraiment a cet instant, plutot que de faire
+   tourner un rond generique. Elle tient aussi un role concret : l'envoi
+   dure parfois 200 ms, et un recu qui apparaitrait d'un coup donnerait
+   l'impression d'un faux. On lui laisse le temps d'etre lu.
+   ====================================================================== */
+#chargement{position:fixed;inset:0;z-index:97;display:none;
+  align-items:center;justify-content:center;
+  background:radial-gradient(60% 40% at 50% 45%,#221E1F,#0E0C0C)}
+#chargement.ouvert{display:flex}
+.charge-in{display:flex;flex-direction:column;align-items:center;gap:20px}
+
+.imprimante{position:relative;width:132px;height:112px}
+/* le corps de l'imprimante, au premier plan : le ticket sort de derriere */
+.imp-corps{position:absolute;left:0;top:0;width:132px;height:44px;border-radius:9px;
+  background:linear-gradient(176deg,#3A3334,#1E1A1B);
+  box-shadow:0 5px 16px -6px rgba(0,0,0,.9), 0 1px 0 rgba(255,255,255,.09) inset;z-index:2}
+.imp-fente{position:absolute;left:14px;top:34px;width:104px;height:4px;border-radius:3px;
+  background:#0B0A0A;box-shadow:0 1px 0 rgba(255,255,255,.07);z-index:3}
+/* le ticket : il descend, s'arrete, repart */
+.imp-ticket{position:absolute;left:20px;top:22px;width:92px;height:74px;border-radius:2px;
+  background:
+    repeating-linear-gradient(180deg,transparent 0 9px,rgba(43,38,39,.16) 9px 10px),
+    linear-gradient(#FCFAF6,#EFEAE0);
+  box-shadow:0 8px 18px -8px rgba(0,0,0,.75);z-index:1;
+  transform-origin:top center;
+  animation:sortTicket 1.9s cubic-bezier(.45,.05,.25,1) infinite}
+@keyframes sortTicket{
+  0%   {transform:translateY(-72px) scaleY(.2);opacity:0}
+  22%  {opacity:1}
+  62%  {transform:translateY(0) scaleY(1);opacity:1}
+  86%  {transform:translateY(0) scaleY(1);opacity:1}
+  100% {transform:translateY(10px) scaleY(1);opacity:0}
+}
+.charge-texte{font-family:Oswald,sans-serif;font-weight:400;font-size:15px;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--creme);text-align:center}
+.charge-points{display:flex;gap:7px}
+.charge-points i{width:6px;height:6px;border-radius:50%;background:var(--rouge);
+  animation:pointe 1.1s ease-in-out infinite}
+.charge-points i:nth-child(2){animation-delay:.16s}
+.charge-points i:nth-child(3){animation-delay:.32s}
+@keyframes pointe{0%,100%{opacity:.22;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}
+
+/* Mouvement reduit : on garde l'information, on retire l'agitation. */
+@media (prefers-reduced-motion:reduce){
+  .imp-ticket{animation:none;transform:none}
+  .charge-points i{animation:none;opacity:.7}
+  .panneau{animation:none}
+}
+#nomChamp{width:100%;margin-top:18px;min-height:54px;padding:0 16px;
+  border-radius:12px;border:1px solid rgba(239,206,148,.3);
+  background:rgba(0,0,0,.4);color:var(--creme);
+  font-family:Jost,sans-serif;font-weight:500;
+  /* 16px minimum : en dessous, iOS zoome tout seul a la mise au point et
+     le client se retrouve avec une page a moitie hors ecran. */
+  font-size:16px;letter-spacing:.02em;text-align:center}
+#nomChamp::placeholder{color:rgba(250,250,250,.3);font-weight:300}
+#nomChamp:focus{outline:none;border-color:var(--rouge-doux);
+  box-shadow:0 0 0 3px rgba(237,31,39,.18)}
+.nom-erreur{margin-top:9px;text-align:center;font-family:Jost,sans-serif;
+  font-size:12px;line-height:1.4;color:#F4A0A4;min-height:16px}
+.nom-boite .envoyer{margin-top:4px}
+.nom-retour{margin-top:9px;width:100%;min-height:44px;cursor:pointer;
+  border:0;background:none;color:rgba(250,250,250,.5);
+  font-family:Jost,sans-serif;font-size:12.5px}
+
+/* ======================================================================
+   LE RECU — en CLAIR, volontairement.
+   Il est brandi a bout de bras, de biais, parfois en plein jour. Le fond
+   sombre du menu est plus beau mais se lit mal dans ces conditions : ici
+   la lisibilite passe devant. La marque revient autrement — le logo, le
+   rouge, les polices, et le bord dentele d'un vrai ticket.
+   ====================================================================== */
+#recu{position:fixed;inset:0;z-index:95;display:none;color:#151314;
+  overflow-y:auto;padding:18px 14px calc(18px + env(safe-area-inset-bottom,0px));
+  background:radial-gradient(70% 40% at 50% 0%,#F0E7D8,#E4DACB 60%,#DCD2C2 100%)}
 #recu.ouvert{display:block}
-.recu-in{width:100%;max-width:390px;margin:0 auto}
-.recu-in .quoi{text-align:center;font-family:Jost,sans-serif;font-size:12px;
-  letter-spacing:.24em;text-transform:uppercase;color:#777}
-.recu-in .no{text-align:center;font-family:Oswald,sans-serif;font-weight:600;
-  font-size:64px;line-height:1.02;margin:2px 0 4px;font-variant-numeric:tabular-nums}
-.recu-in .quand{text-align:center;font-family:Jost,sans-serif;font-size:12.5px;color:#666}
+.recu-in{width:100%;max-width:392px;margin:0 auto}
 
-/* La ligne d'etat : elle dit la VERITE sur le ticket de cuisine. */
-.etat{margin:16px 0 0;padding:12px 14px;border-radius:10px;
-  font-family:Jost,sans-serif;font-size:13px;line-height:1.5;text-align:center}
-.etat[data-etat="attente"]{background:#F1F1F1;color:#555}
-.etat[data-etat="ok"]{background:#E8F4EA;color:#1F6B2E}
-.etat[data-etat="rate"]{background:#FDECEC;color:#A11B1B;font-weight:600}
+/* --- le papier et ses bords dentelés --- */
+.ticket-papier{position:relative;animation:ticketIn .46s var(--ressort)}
+@keyframes ticketIn{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+.ticket-corps{position:relative;background:#FCFAF6;padding:24px 22px 20px;
+  box-shadow:0 20px 44px -22px rgba(40,30,20,.55);
+  /* une trame très légère : du papier, pas un aplat d'écran */
+  background-image:
+    repeating-linear-gradient(0deg,rgba(43,38,39,.022) 0 1px,transparent 1px 3px),
+    linear-gradient(#FCFAF6,#FCFAF6)}
+/* Le bord dentelé d'un ticket déchiré, en dégradés coniques : aucune image,
+   et il s'adapte à toutes les largeurs. */
+.dentelle{height:9px;
+  background:radial-gradient(circle at 5px 0, transparent 5px, #FCFAF6 5px) repeat-x;
+  background-size:10px 9px;
+  filter:drop-shadow(0 0 0 rgba(0,0,0,0))}
+.dentelle.haut{transform:rotate(180deg)}
+.dentelle.bas{margin-top:0}
 
-.recu-in table{width:100%;border-collapse:collapse;margin-top:16px}
-.recu-in td{padding:9px 0;border-bottom:1px solid #E4E4E4;vertical-align:top}
-.recu-in td.q{width:44px;font-family:Oswald,sans-serif;font-size:20px;font-weight:500;
-  font-variant-numeric:tabular-nums}
-.recu-in td.n{font-family:Jost,sans-serif;font-size:15px;font-weight:600;line-height:1.3}
-.recu-in td.n small{display:block;font-size:11.5px;font-weight:400;color:#777;margin-top:2px}
-.recu-in .note{margin-top:18px;background:#F5F5F5;border-radius:10px;padding:12px 14px;
-  font-family:Jost,sans-serif;font-size:12.5px;line-height:1.55;color:#555;text-align:center}
-.recu-in .rentrer{margin-top:14px;width:100%;min-height:50px;cursor:pointer;
-  border:1px solid #CFCFCF;border-radius:12px;background:#fff;color:#333;
+.r-logo{display:flex;justify-content:center;margin-bottom:14px}
+.r-logo svg{width:min(150px,54%);height:auto;display:block}
+/* Le logo est concu pour un fond noir : son lettrage est blanc. Sur le
+   papier clair du recu on REPEINT le lettrage en encre, sans toucher au
+   groupe rouge. Un filter:invert() aurait aussi retourne le rouge du koi,
+   qui serait ressorti en turquoise. */
+.r-logo svg g[fill="#FAFAFA"]{fill:#151314}
+
+.recu-in .quoi{text-align:center;font-family:Jost,sans-serif;font-size:10.5px;
+  letter-spacing:.3em;text-transform:uppercase;color:#9A8F7E}
+
+.r-numero{text-align:center;margin-top:2px}
+.recu-in .no{font-family:Oswald,sans-serif;font-weight:600;font-size:66px;
+  line-height:1;letter-spacing:.01em;font-variant-numeric:tabular-nums;color:#151314}
+.r-nom{margin-top:2px;font-family:Oswald,sans-serif;font-weight:400;
+  font-size:25px;letter-spacing:.07em;text-transform:uppercase;color:var(--rouge-fonce)}
+/* La date en capitales, dans la meme graisse condensee que les titres de
+   la carte : elle se lit comme une mention de ticket, pas comme une phrase. */
+.recu-in .quand{text-align:center;margin-top:9px;
+  font-family:Oswald,"Arial Narrow",sans-serif;font-weight:400;
+  font-size:12.5px;letter-spacing:.11em;text-transform:uppercase;color:#8A8073}
+
+/* LA LIGNE D'ETAT — elle ne parle que quand il y a un probleme.
+   Confirmer « bien recue » a chaque commande n'apprend rien : c'est le cas
+   normal. En revanche un ticket qui n'est PAS sorti doit se voir, sinon le
+   client se presente au comptoir avec un numero que la cuisine n'a pas.
+   L'etat reel reste porte par data-etat, seul l'affichage est filtre. */
+.etat{display:none;margin:16px 0 0;padding:12px 15px;border-radius:9px;
+  font-family:Jost,sans-serif;font-size:13px;line-height:1.55;text-align:center}
+.etat[data-etat="rate"]{display:block;background:#FBEAEA;color:#A11B1B;font-weight:600;
+  border:1px solid rgba(161,27,27,.3)}
+
+/* LA CONSIGNE — la seule chose a retenir en quittant l'ecran.
+   C'est le CADRE qui attire l'oeil : fond teinte, filet rouge sur le
+   flanc. Le texte, lui, reste en italique et d'un seul tenant — ni
+   soulignement ni surlignage mot a mot, qui hacheraient la lecture de la
+   seule phrase qu'il faut lire en entier. */
+.appel{margin-top:14px;padding:15px 17px;border-radius:10px;
+  background:rgba(237,31,39,.09);
+  border:1px solid rgba(192,22,28,.3);
+  border-left:5px solid var(--rouge);
+  font-family:Jost,sans-serif;font-style:italic;font-weight:400;
+  font-size:13.5px;line-height:1.65;
+  text-align:center;color:#8E1318;
+  box-shadow:0 2px 12px -6px rgba(192,22,28,.45)}
+
+.r-titre-liste{display:flex;align-items:baseline;justify-content:space-between;
+  margin-top:20px;padding-bottom:7px;border-bottom:2px solid #151314;
+  font-family:Jost,sans-serif;font-size:10.5px;font-weight:600;
+  letter-spacing:.2em;text-transform:uppercase;color:#151314}
+.r-compte{font-weight:400;letter-spacing:.06em;color:#8A8073;text-transform:none}
+
+.recu-in table{width:100%;border-collapse:collapse}
+.recu-in td{padding:10px 0;border-bottom:1px dotted rgba(43,38,39,.26);vertical-align:top}
+.recu-in tr:last-child td{border-bottom:0}
+.recu-in td.q{width:46px;font-family:Oswald,sans-serif;font-size:19px;font-weight:500;
+  font-variant-numeric:tabular-nums;color:var(--rouge-fonce)}
+.recu-in td.n{font-family:Jost,sans-serif;font-size:14.5px;font-weight:600;line-height:1.3;
+  color:#151314}
+.recu-in td.n small{display:block;font-size:11px;font-weight:400;color:#8A8073;margin-top:2px}
+
+/* « Paiement au comptoir » : la seconde chose a retenir, apres la
+   consigne d'appel. Assez grande pour etre lue sans y revenir. */
+.recu-in .note{margin-top:18px;padding-top:15px;border-top:1px solid rgba(43,38,39,.14);
+  font-family:Jost,sans-serif;font-weight:500;font-size:16px;line-height:1.45;
+  letter-spacing:.01em;color:#3A3330;text-align:center}
+.r-adresse{margin-top:10px;text-align:center;font-family:Jost,sans-serif;
+  font-size:10px;letter-spacing:.11em;text-transform:uppercase;color:#A89C8A}
+
+.recu-in .rentrer{margin-top:16px;width:100%;min-height:50px;cursor:pointer;
+  border:1px solid rgba(43,38,39,.22);border-radius:12px;
+  background:rgba(255,255,255,.55);color:#3A3330;
   font-family:Jost,sans-serif;font-size:14px;font-weight:600}
+.recu-in .rentrer:active{background:rgba(255,255,255,.9)}
+
+@media (prefers-reduced-motion:reduce){
+  .ticket-papier,.nom-boite{animation:none}
+}
 
 @media (prefers-reduced-motion:reduce){
   #noren{display:none}
@@ -1383,17 +1702,136 @@ l-3 2154 -24 19 c-20 17 -40 19 -172 19 -142 0 -149 -1 -176 -24 l-28 -24 -5
 <!-- ======================================================================
      LE RECU — ce que le client montre au comptoir.
      ====================================================================== -->
+<!-- ======================================================================
+     LA GALERIE — la vitrine.
+     Une grille serree, chaque photo cernee d'un filet clair : le quadrillage
+     tient les images ensemble et evite la bouillie de couleurs qu'on obtient
+     en collant des photos de nourriture bord a bord.
+     ====================================================================== -->
+<div id="galerie" role="dialog" aria-modal="true" aria-label="Galerie">
+  <div class="gal-barre">
+    <span class="gal-titre" id="galTitre"></span>
+    <button class="fermer" id="galFermer" type="button" aria-label="Fermer">✕</button>
+  </div>
+  <div class="gal-defile">
+    <div class="gal-grille" id="galGrille"></div>
+  </div>
+</div>
+
+<!-- La photo en grand, une fois qu'on en a touche une. -->
+<div id="loupe" role="dialog" aria-modal="true" aria-label="Photo">
+  <button class="loupe-fermer" id="loupeFermer" type="button" aria-label="Fermer">✕</button>
+  <button class="loupe-fleche gauche" id="loupePrec" type="button" aria-label="Photo précédente">‹</button>
+  <img id="loupeImg" alt="">
+  <button class="loupe-fleche droite" id="loupeSuiv" type="button" aria-label="Photo suivante">›</button>
+  <div class="loupe-compte" id="loupeCompte"></div>
+</div>
+
+<!-- ======================================================================
+     L'ETAPE DE RELECTURE — on relit sa commande avant de la lancer.
+     Une commande partie est imprimee en cuisine dans la seconde : il n'y a
+     pas de « annuler » possible. Ce coup d'oeil est le dernier moment ou
+     une erreur coute encore zero.
+     ====================================================================== -->
+<div id="revue" role="dialog" aria-modal="true" aria-labelledby="revueTitre">
+  <div class="panneau">
+    <div class="nom-motif" aria-hidden="true"></div>
+    <h2 id="revueTitre"></h2>
+    <p class="panneau-quoi" id="revueQuoi"></p>
+
+    <div class="revue-liste" id="revueListe"></div>
+
+    <div class="revue-total">
+      <span id="revueTotalLib"></span><b id="revueTotal"></b>
+    </div>
+
+    <button class="envoyer" id="revueConfirmer" type="button"></button>
+    <button class="panneau-retour" id="revueModifier" type="button"></button>
+  </div>
+</div>
+
+<!-- ======================================================================
+     LA TRANSITION — pendant que le ticket part en cuisine.
+     Un ticket qui sort d'une imprimante : ce qui se passe reellement a
+     cet instant-la, montre plutot qu'ecrit.
+     ====================================================================== -->
+<div id="chargement" role="status" aria-live="polite">
+  <div class="charge-in">
+    <div class="imprimante" aria-hidden="true">
+      <div class="imp-ticket"></div>
+      <div class="imp-corps"></div>
+      <div class="imp-fente"></div>
+    </div>
+    <p class="charge-texte" id="chargeTexte"></p>
+    <div class="charge-points" aria-hidden="true"><i></i><i></i><i></i></div>
+  </div>
+</div>
+
+<!-- ======================================================================
+     L'ETAPE DU PRENOM — demandee juste avant l'envoi.
+     Au dernier moment volontairement : personne ne donne son prenom pour
+     regarder un menu, mais tout le monde l'accepte une fois la commande
+     prete a partir.
+     ====================================================================== -->
+<div id="nomEtape" role="dialog" aria-modal="true" aria-labelledby="nomTitre">
+  <div class="panneau">
+    <div class="nom-motif" aria-hidden="true"></div>
+    <h2 id="nomTitre"></h2>
+    <p class="panneau-quoi" id="nomQuoi"></p>
+
+    <input id="nomChamp" type="text" maxlength="30"
+           autocomplete="given-name" autocapitalize="words"
+           spellcheck="false" enterkeyhint="done">
+    <p class="nom-erreur" id="nomErreur" role="alert"></p>
+
+    <button class="envoyer" id="nomValider" type="button"></button>
+    <button class="panneau-retour" id="nomAnnuler" type="button"></button>
+  </div>
+</div>
+
+<!-- ======================================================================
+     LE RECU — ce que le client montre au comptoir.
+     En clair, volontairement : il est brandi a bout de bras, de biais,
+     parfois en plein jour. La lisibilite passe avant l'ambiance sombre du
+     menu. La marque revient par le logo, le rouge, les polices et le
+     bord dentele du papier.
+     ====================================================================== -->
 <div id="recu" role="dialog" aria-modal="true" aria-label="Votre commande">
   <div class="recu-in">
-    <div class="quoi" id="rQuoi"></div>
-    <div class="no" id="rNo">—</div>
-    <div class="quand" id="rQuand"></div>
 
-    <p class="etat" id="rEtat" data-etat="attente" role="status"></p>
+    <div class="ticket-papier">
+      <div class="dentelle haut" aria-hidden="true"></div>
 
-    <table id="rTable"></table>
+      <div class="ticket-corps">
+        <div class="r-logo" id="rLogo" aria-hidden="true"></div>
 
-    <p class="note" id="rNote"></p>
+        <div class="quoi" id="rQuoi"></div>
+
+        <div class="r-numero">
+          <div class="no" id="rNo">—</div>
+          <div class="r-nom" id="rNom"></div>
+        </div>
+
+        <div class="quand" id="rQuand"></div>
+
+        <p class="etat" id="rEtat" data-etat="attente" role="status"></p>
+
+        <!-- La consigne, en evidence : c'est la seule chose que le client
+             doit RETENIR en quittant l'ecran. -->
+        <div class="appel" id="rAppel"></div>
+
+        <div class="r-titre-liste">
+          <span id="rTitreListe"></span><span class="r-compte" id="rCompte"></span>
+        </div>
+        <table id="rTable"></table>
+
+        <p class="note" id="rNote"></p>
+        <div class="r-adresse" id="rAdresse"></div>
+      </div>
+
+      <div class="dentelle bas" aria-hidden="true"></div>
+    </div>
+
     <button class="rentrer" id="rRentrer" type="button"></button>
   </div>
 </div>
@@ -1498,6 +1936,134 @@ const noren = $('noren');
 if (REDUIT) noren.classList.add('parti');
 else setTimeout(() => noren.classList.add('parti'), 1620);
 
+/* ======================================================================
+   LA GALERIE
+   Les photos viennent du serveur, qui liste simplement `public/galerie/`.
+   Deposer un fichier dans ce dossier suffit a l'ajouter ici : aucun code a
+   toucher pour changer la vitrine avant un service.
+   ====================================================================== */
+
+/* La langue est declaree ici, avant tout ce qui la lit : la galerie comme
+   la carte composent leurs libelles des l'evaluation du script. */
+let LANGUE = 'fr';
+
+const PHOTOS = window.COMPTOIR_GALERIE ?? [];
+
+const GAL_TXT = {
+  fr: { titre:'Galerie', bouton:'Galerie' },
+  en: { titre:'Gallery', bouton:'Gallery' }
+};
+
+/* Un nom de fichier fait un texte alternatif utilisable : « 02-poke-bol.jpg »
+   devient « poke bol ». Mieux qu'un alt vide pour qui navigue au lecteur
+   d'ecran, et cela ne demande aucune saisie supplementaire au commerce. */
+function alternatif(fichier){
+  return fichier
+    .replace(/\.[^.]+$/, '')
+    .replace(/^\d+[-_\s]*/, '')
+    .replace(/[-_]+/g, ' ')
+    .trim() || 'Photo';
+}
+
+function construireGalerie(){
+  if (PHOTOS.length === 0) return;
+
+  $('galTitre').textContent = GAL_TXT[LANGUE].titre;
+
+  $('galGrille').innerHTML = PHOTOS.map((f, i) =>
+    '<button class="gal-case" type="button" data-i="' + i + '">'
+    /* La GRILLE prend la vignette : neuf photos de studio en pleine
+       resolution feraient attendre des dizaines de secondes pour des images
+       affichees grandes comme un timbre. `loading="lazy"` evite en plus de
+       charger ce qui est hors ecran. */
+    + '<img src="/galerie/vignettes/' + encodeURIComponent(f) + '" alt="' + ech(alternatif(f)) + '"'
+    + ' loading="lazy" decoding="async">'
+    + '</button>'
+  ).join('');
+}
+
+/** Reporte la langue courante sur les libelles de la galerie. */
+function majGalerie(){
+  if (PHOTOS.length === 0) return;
+  $('galTitre').textContent = GAL_TXT[LANGUE].titre;
+  const bouton = document.querySelector('#liens .lien span');
+  if (bouton) bouton.textContent = GAL_TXT[LANGUE].bouton;
+}
+
+function ouvrirGalerie(){
+  construireGalerie();
+  document.documentElement.classList.add('calque-ouvert');
+  $('galerie').classList.add('ouvert');
+  $('galerie').querySelector('.gal-defile').scrollTop = 0;
+  $('galFermer').focus({preventScroll:true});
+}
+
+function fermerGalerie(){
+  $('galerie').classList.remove('ouvert');
+  document.documentElement.classList.remove('calque-ouvert');
+}
+
+$('galFermer').addEventListener('click', fermerGalerie);
+
+/* ---------- la photo en grand ---------- */
+
+let photoCourante = 0;
+
+function ouvrirLoupe(i){
+  photoCourante = (i + PHOTOS.length) % PHOTOS.length;
+
+  /* L'AGRANDISSEMENT prend la pleine resolution : c'est le seul moment ou
+     elle se voit, et on n'en charge qu'une a la fois. */
+  $('loupeImg').src = '/galerie/' + encodeURIComponent(PHOTOS[photoCourante]);
+  $('loupeImg').alt = alternatif(PHOTOS[photoCourante]);
+  $('loupeCompte').textContent = (photoCourante + 1) + ' / ' + PHOTOS.length;
+
+  /* Une seule photo : les fleches n'ont nulle part ou aller. */
+  const plusieurs = PHOTOS.length > 1;
+  $('loupePrec').hidden = !plusieurs;
+  $('loupeSuiv').hidden = !plusieurs;
+
+  $('loupe').classList.add('ouvert');
+}
+
+function fermerLoupe(){
+  $('loupe').classList.remove('ouvert');
+  $('loupeImg').removeAttribute('src');   /* libere la grande image */
+}
+
+$('galGrille').addEventListener('click', e => {
+  const case_ = e.target.closest('.gal-case');
+  if (case_) ouvrirLoupe(Number(case_.dataset.i));
+});
+
+$('loupeFermer').addEventListener('click', fermerLoupe);
+$('loupePrec').addEventListener('click', () => ouvrirLoupe(photoCourante - 1));
+$('loupeSuiv').addEventListener('click', () => ouvrirLoupe(photoCourante + 1));
+
+/* Toucher le fond ferme : le geste qu'on tente d'instinct. */
+$('loupe').addEventListener('click', e => { if (e.target === $('loupe')) fermerLoupe(); });
+
+/* Le balayage lateral, attendu de tous sur un telephone. */
+let departX = null;
+$('loupe').addEventListener('touchstart', e => { departX = e.changedTouches[0].clientX; }, {passive:true});
+$('loupe').addEventListener('touchend', e => {
+  if (departX === null) return;
+  const parcouru = e.changedTouches[0].clientX - departX;
+  departX = null;
+  /* 45 px : assez pour ne pas confondre avec un simple appui. */
+  if (Math.abs(parcouru) > 45) ouvrirLoupe(photoCourante + (parcouru < 0 ? 1 : -1));
+});
+
+addEventListener('keydown', e => {
+  if ($('loupe').classList.contains('ouvert')){
+    if (e.key === 'Escape') fermerLoupe();
+    if (e.key === 'ArrowLeft') ouvrirLoupe(photoCourante - 1);
+    if (e.key === 'ArrowRight') ouvrirLoupe(photoCourante + 1);
+    return;
+  }
+  if (e.key === 'Escape' && $('galerie').classList.contains('ouvert')) fermerGalerie();
+});
+
 /* ---------- LE MENU ---------- */
 const ICONE = {
   ig:'<svg viewBox="0 0 24 24" aria-hidden="true">'
@@ -1513,6 +2079,23 @@ const LIENS = [
 ].filter(l => !!l.url);
 
 const nav = $('liens');
+
+/* La galerie passe AVANT Facebook : elle donne faim, ce qui sert la
+   commande. Elle reste discrete sous le bouton rouge — rien ne doit
+   concurrencer « Commander », qui est la raison d'etre de la page.
+   Aucune photo dans le dossier : pas de bouton, plutot qu'un bouton qui
+   ouvre sur du vide. */
+if (PHOTOS.length > 0){
+  const b = document.createElement('button');
+  b.className = 'lien'; b.type = 'button';
+  b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">'
+    + '<path d="M21 5H3a1 1 0 00-1 1v12a1 1 0 001 1h18a1 1 0 001-1V6a1 1 0 00-1-1zm-1 11.6l-4.3-4.3a1 1 0 00-1.4 0L11 15.6l-2.3-2.3a1 1 0 00-1.4 0L4 16.6V7h16z"/>'
+    + '<circle cx="8.5" cy="10" r="1.6"/></svg>'
+    + '<span>' + GAL_TXT[LANGUE].bouton + '</span>';
+  b.addEventListener('click', ouvrirGalerie);
+  nav.appendChild(b);
+}
+
 LIENS.forEach(l => {
   const a = document.createElement('a');
   a.className='lien'; a.href=l.url; a.target='_blank'; a.rel='noopener';
@@ -1535,7 +2118,6 @@ LIENS.forEach(l => {
    son montant. Sans "p", la ligne s'affiche sans prix. On peut donc en
    ajouter plus tard, un par un, sans toucher a la mise en page.
    ====================================================================== */
-let LANGUE = 'fr';
 const corps = $('mCorps');
 const texte = (o, cle) => LANGUE === 'fr' ? o[cle+'Fr'] : o[cle+'En'];
 
@@ -1563,11 +2145,22 @@ const TXT = {
   fr: {
     ajouter:'Ajouter', retirer:'Retirer',
     vide:'Votre commande est vide', article:'article', articles:'articles',
-    aide:'Ajoutez des plats', pret:'Montrez le numéro au comptoir',
+    aide:'Ajoutez des plats', pret:'Prêt à envoyer',
     envoyer:'Envoyer ma commande', envoi:'Envoi en cours…',
     quoi:'Commande', recu:'Votre commande',
-    note:'Montrez cet écran au comptoir.<br>Vous payez sur place, comme d’habitude.',
+    note:'Paiement au comptoir.',
     rentrer:'← Revenir au menu',
+    revueTitre:'Vérifiez votre commande',
+    revueQuoi:'Une fois envoyée, elle part directement en cuisine.',
+    revueTotal:'Total', revueConfirmer:'Confirmer',
+    revueModifier:'← Modifier ma commande',
+    chargeTexte:'Envoi en cuisine',
+    nomTitre:'À quel nom ?', nomChamp:'Votre prénom',
+    nomQuoi:'Le comptoir appellera votre prénom ou votre numéro quand ce sera prêt.',
+    nomVide:'Entrez votre prénom pour continuer.',
+    annuler:'← Revenir à ma commande',
+    appel:'Quand vous entendez votre prénom ou votre numéro, présentez-vous au comptoir et montrez cet écran.',
+    titreListe:'Votre commande',
     attente:'Envoi en cuisine…',
     ok:'✓ Reçue en cuisine',
     rate:'⚠ La cuisine n’a pas reçu le ticket. Montrez ce numéro au comptoir, on s’en occupe.',
@@ -1578,11 +2171,22 @@ const TXT = {
   en: {
     ajouter:'Add', retirer:'Remove',
     vide:'Your order is empty', article:'item', articles:'items',
-    aide:'Add some dishes', pret:'Show the number at the counter',
+    aide:'Add some dishes', pret:'Ready to send',
     envoyer:'Send my order', envoi:'Sending…',
     quoi:'Order', recu:'Your order',
-    note:'Show this screen at the counter.<br>You pay there, as usual.',
+    note:'Payment at the counter.',
     rentrer:'← Back to the menu',
+    revueTitre:'Check your order',
+    revueQuoi:'Once sent, it goes straight to the kitchen.',
+    revueTotal:'Total', revueConfirmer:'Confirm',
+    revueModifier:'← Change my order',
+    chargeTexte:'Sending to the kitchen',
+    nomTitre:'What name?', nomChamp:'Your first name',
+    nomQuoi:'The counter will call your first name or your number when it’s ready.',
+    nomVide:'Enter your first name to continue.',
+    annuler:'← Back to my order',
+    appel:'When you hear your name or your number, come to the counter and show this screen.',
+    titreListe:'Your order',
     attente:'Sending to the kitchen…',
     ok:'✓ Received by the kitchen',
     rate:'⚠ The kitchen did not receive the ticket. Show this number at the counter and staff will take it from there.',
@@ -1682,6 +2286,116 @@ corps.addEventListener('click', e => {
   if (navigator.vibrate) navigator.vibrate(8);
 });
 
+/* ---------- 1. la relecture ----------
+   Une commande envoyee est imprimee en cuisine dans la seconde : il n'y a
+   pas d'annulation possible ensuite. Ce coup d'oeil est le dernier moment
+   ou corriger une erreur ne coute rien. */
+
+/** Le panier, en lignes lisibles, dans la langue du client. */
+function lignesDuPanier(){
+  const parId = new Map();
+  for (const sec of CARTE) for (const pl of sec.plats) parId.set(pl.id, { pl, sec });
+
+  return [...panier].map(([id, quantite]) => {
+    const e = parId.get(id);
+    return {
+      quantite,
+      nom: LANGUE === 'fr' ? e.pl.fr : e.pl.en,
+      section: LANGUE === 'fr' ? e.sec.fr : e.sec.en
+    };
+  });
+}
+
+function demanderRevue(){
+  if (totalArticles() === 0) return;
+
+  $('revueTitre').textContent = T('revueTitre');
+  $('revueQuoi').textContent = T('revueQuoi');
+  $('revueTotalLib').textContent = T('revueTotal');
+  $('revueConfirmer').textContent = T('revueConfirmer');
+  $('revueModifier').textContent = T('revueModifier');
+
+  const n = totalArticles();
+  $('revueTotal').textContent = n + ' ' + (n > 1 ? T('articles') : T('article'));
+
+  $('revueListe').innerHTML = lignesDuPanier().map(l =>
+    '<div class="revue-ligne"><b>' + l.quantite + '&times;</b>'
+    + '<span>' + ech(l.nom) + '<small>' + ech(l.section) + '</small></span></div>'
+  ).join('');
+
+  $('revue').classList.add('ouvert');
+  $('revue').querySelector('.panneau').scrollTop = 0;
+}
+
+function fermerRevue(){ $('revue').classList.remove('ouvert'); }
+
+$('cEnvoyer').addEventListener('click', demanderRevue);
+$('revueModifier').addEventListener('click', fermerRevue);
+$('revueConfirmer').addEventListener('click', () => { fermerRevue(); demanderNom(); });
+
+/* ---------- 2. l'etape du prenom ----------
+   Demandee au dernier moment, pas a l'ouverture : personne ne donne son
+   prenom pour regarder un menu, tout le monde l'accepte une fois la
+   commande prete a partir. */
+
+function demanderNom(){
+  if (totalArticles() === 0) return;
+
+  $('nomTitre').textContent = T('nomTitre');
+  $('nomQuoi').textContent = T('nomQuoi');
+  $('nomChamp').placeholder = T('nomChamp');
+  $('nomValider').textContent = T('envoyer');
+  $('nomAnnuler').textContent = T('annuler');
+  $('nomErreur').textContent = '';
+
+  $('nomEtape').classList.add('ouvert');
+  /* Le focus doit attendre la fin de l'animation, sinon iOS ouvre le
+     clavier sur un panneau encore en train d'entrer et le fait sauter. */
+  setTimeout(() => $('nomChamp').focus(), 340);
+}
+
+function fermerNom(){
+  $('nomEtape').classList.remove('ouvert');
+  $('nomChamp').blur();
+}
+
+/* Reculer d'un cran ramene a la relecture, pas au menu : on defait une
+   etape a la fois, comme on l'attend d'un « retour ». */
+$('nomAnnuler').addEventListener('click', () => { fermerNom(); demanderRevue(); });
+$('nomValider').addEventListener('click', () => envoyer());
+
+/* Entree vaut validation : c'est ce que fait la touche « OK » du clavier. */
+$('nomChamp').addEventListener('keydown', e => {
+  if (e.key === 'Enter'){ e.preventDefault(); envoyer(); }
+});
+$('nomChamp').addEventListener('input', () => { $('nomErreur').textContent = ''; });
+
+addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if ($('nomEtape').classList.contains('ouvert')){ fermerNom(); demanderRevue(); }
+  else if ($('revue').classList.contains('ouvert')) fermerRevue();
+});
+
+/* ---------- 3. la transition ----------
+   L'envoi dure parfois 200 ms. Un recu qui surgirait d'un coup aurait
+   l'air d'etre apparu sans rien faire ; on laisse a l'animation le temps
+   d'etre lue, et le client voit ce qui se passe vraiment en cuisine. */
+
+const DUREE_MINIMALE = 1400;
+
+function montrerChargement(){
+  $('chargeTexte').textContent = T('chargeTexte');
+  $('chargement').classList.add('ouvert');
+}
+
+function cacherChargement(){ $('chargement').classList.remove('ouvert'); }
+
+/** Attend que `depuis` ait au moins `DUREE_MINIMALE` millisecondes. */
+function laisserLeTemps(depuis){
+  const reste = DUREE_MINIMALE - (Date.now() - depuis);
+  return reste > 0 ? new Promise(r => setTimeout(r, reste)) : Promise.resolve();
+}
+
 /* ---------- l'envoi ---------- */
 
 let envoiEnCours = false;
@@ -1691,12 +2405,24 @@ async function envoyer(){
      cle d'idempotence cote serveur, qui rattrape tout le reste — reessai
      apres coupure, rechargement de la page, deux onglets. */
   if (envoiEnCours || totalArticles() === 0) return;
+
+  const nom = $('nomChamp').value.trim();
+  if (nom === ''){
+    $('nomErreur').textContent = T('nomVide');
+    $('nomChamp').focus();
+    return;
+  }
+
   envoiEnCours = true;
 
-  const bouton = $('cEnvoyer');
+  const bouton = $('nomValider');
   bouton.disabled = true;
   bouton.textContent = T('envoi');
   $('cAvis').textContent = '';
+  $('nomErreur').textContent = '';
+
+  const debut = Date.now();
+  montrerChargement();
 
   cleEnvoi = cleEnvoi ?? cleAleatoire();
 
@@ -1707,6 +2433,7 @@ async function envoyer(){
       body: JSON.stringify({
         clientOrderId: cleEnvoi,
         lang: LANGUE,
+        nom,
         items: [...panier].map(([id, qty]) => ({ id, qty }))
       })
     });
@@ -1719,32 +2446,45 @@ async function envoyer(){
       throw new Error(donnees.erreur || T('echec'));
     }
 
+    await laisserLeTemps(debut);
+    cacherChargement();
+    fermerNom();
     montrerRecu(donnees);
     suivre(donnees.id);
   } catch (erreur) {
     /* Aucun numero n'est invente ici. Si le serveur n'a pas confirme, le
        client n'a pas de commande, et le lui laisser croire serait pire que
-       de le dire. Le panier reste intact pour reessayer. */
-    $('cAvis').textContent = erreur.message || T('echec');
+       de le dire. Le panier et le prenom restent intacts pour reessayer.
+
+       En cas d'echec on NE laisse PAS courir l'animation : la mauvaise
+       nouvelle doit arriver tout de suite, pas apres une seconde et demie
+       de faux suspense. */
+    cacherChargement();
+    $('nomErreur').textContent = erreur.message || T('echec');
     bouton.textContent = T('reessayer');
   } finally {
     envoiEnCours = false;
-    bouton.disabled = totalArticles() === 0;
-    if (!$('recu').classList.contains('ouvert') && !$('cAvis').textContent) {
-      bouton.textContent = T('envoyer');
-    }
+    bouton.disabled = false;
+    if (!$('nomErreur').textContent) bouton.textContent = T('envoyer');
   }
 }
-
-$('cEnvoyer').addEventListener('click', envoyer);
 
 /* ---------- le recu ---------- */
 
 function montrerRecu(commande){
+  poserLogoRecu();
+
   $('rQuoi').textContent = T('quoi');
   $('rNo').textContent = '#' + commande.numero;
-  $('rQuand').textContent = new Date().toLocaleTimeString(
-    LANGUE === 'fr' ? 'fr-CA' : 'en-CA', { hour:'2-digit', minute:'2-digit' });
+  $('rNom').textContent = commande.nom;
+
+  $('rQuand').textContent = horodatage(new Date());
+
+  $('rAppel').innerHTML = T('appel');
+
+  $('rTitreListe').textContent = T('titreListe');
+  $('rCompte').textContent = commande.total + ' '
+    + (commande.total > 1 ? T('articles') : T('article'));
 
   $('rTable').innerHTML = commande.articles.map(a =>
     '<tr><td class="q">' + a.quantite + '&times;</td>'
@@ -1752,11 +2492,37 @@ function montrerRecu(commande){
   ).join('');
 
   $('rNote').innerHTML = T('note');
+  $('rAdresse').textContent = CONFIG.adresse;
   peindreEtat(commande.etatImpression);
 
   $('recu').classList.add('ouvert');
   $('recu').scrollTop = 0;
   if (navigator.vibrate) navigator.vibrate([10, 40, 10]);
+}
+
+/**
+ * « mardi 22 septembre · 01h21 ».
+ *
+ * L'heure est assemblee a la main plutot que par toLocaleTimeString : en
+ * fr-CA celui-ci rend « 01 h 21 », avec des espaces, qui ne ressemble ni au
+ * ticket de cuisine ni a ce qu'on lit sur une facture.
+ */
+function horodatage(instant){
+  const locale = LANGUE === 'fr' ? 'fr-CA' : 'en-CA';
+  const jour = instant.toLocaleDateString(locale, { weekday:'long', day:'numeric', month:'long' });
+  const hh = String(instant.getHours()).padStart(2, '0');
+  const mm = String(instant.getMinutes()).padStart(2, '0');
+
+  return jour + ' · ' + (LANGUE === 'fr' ? `${hh}h${mm}` : `${hh}:${mm}`);
+}
+
+/* Le logo de la page, repris sur le recu. Comme pour la carte, on clone le
+   SVG deja present plutot que d'en charger un second. */
+function poserLogoRecu(){
+  const cible = $('rLogo');
+  if (cible.childElementCount) return;
+  const source = document.querySelector('#marque svg');
+  if (source) cible.appendChild(source.cloneNode(true));
 }
 
 /**
@@ -1876,6 +2642,7 @@ function rendreCarte(){
 
 function basculer(l){
   LANGUE = l;
+  majGalerie();          /* la vitrine parle la meme langue que la carte */
   $('langFr').setAttribute('aria-pressed', String(l === 'fr'));
   $('langEn').setAttribute('aria-pressed', String(l === 'en'));
   $('papier').setAttribute('lang', l === 'fr' ? 'fr-CA' : 'en-CA');

@@ -52,6 +52,9 @@ main{max-width:720px;margin:0 auto;padding:14px 16px}
 .cmd[data-etat="echec"]{border-left:5px solid var(--rouge)}
 .cmd-tete{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .no{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1}
+/* Le prenom aussi gros que le numero : le comptoir appelle l'un OU l'autre,
+   et cherche aussi bien « la commande de Marie » que « la 482 ». */
+.nom{font-size:19px;font-weight:600;line-height:1.2;margin-top:3px;color:#F4A0A4}
 .heure{font-size:12px;color:var(--doux);margin-top:3px}
 
 .badge{flex:none;padding:6px 11px;border-radius:999px;font-size:11px;font-weight:700;
@@ -168,6 +171,7 @@ function peindre(commandes){
       <div class="cmd-tete">
         <div>
           <div class="no">#${c.numero}</div>
+          <div class="nom">${ech(c.nom)}</div>
           <div class="heure">${ech(c.heure)} · ${c.total} article${c.total > 1 ? 's' : ''}</div>
         </div>
         <div class="badge" data-etat="${c.etatImpression}">${ETIQUETTE[c.etatImpression]}</div>

@@ -19,6 +19,13 @@ function entier(nom, defaut) {
 export const config = {
   port: entier('PORT', 3000),
 
+  /**
+   * En production, les pages sont lues une fois et gardees en memoire.
+   * Ailleurs, elles sont relues a chaque requete : retoucher le HTML et
+   * rafraichir suffit, sans redemarrer le serveur.
+   */
+  production: process.env.NODE_ENV === 'production',
+
   /** Le fichier SQLite. ':memory:' pour les tests. */
   cheminBase: process.env.DB_PATH ?? 'commandes.db',
 
@@ -77,6 +84,9 @@ export const config = {
 
   /** Une commande raisonnable : bornes au-dela desquelles c'est une erreur. */
   quantiteMax: 20,
+  /* Assez pour « Marie-Christine », trop court pour un paragraphe sur le
+     ticket de cuisine. */
+  nomMax: 30,
   articlesMax: 40,
   tailleCorpsMax: 32 * 1024,
 };

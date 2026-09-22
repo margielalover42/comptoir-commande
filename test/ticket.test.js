@@ -7,7 +7,8 @@ import { construireTicket } from '../src/ticket.js';
 import { config } from '../src/config.js';
 
 const COMMANDE = {
-  numero: 37,
+  numero: 482,
+  nom: 'Thomas',
   creeeA: new Date('2026-09-22T16:41:00Z'), // 12h41 a Montreal
   articles: [
     { quantite: 2, nomFr: 'Saumon Fumé', sectionFr: 'Sushi Pizza' },
@@ -28,7 +29,7 @@ function surPapier(xml) {
 test('porte le numero, les plats et leur section', () => {
   const papier = surPapier(construireTicket(COMMANDE));
 
-  assert.match(papier, /#37/);
+  assert.match(papier, /#482/);
   assert.match(papier, /2x SAUMON FUMÉ/);
   assert.match(papier, /Sushi Pizza/);
   assert.match(papier, /1x HOMARD/);
@@ -73,7 +74,7 @@ test('une reimpression est annoncee, une impression normale ne l’est pas', () 
 
 test('la reimpression est en tete, avant le numero', () => {
   const papier = surPapier(construireTicket(COMMANDE, { reimpression: true }));
-  assert.ok(papier.indexOf('REIMPRESSION') < papier.indexOf('#37'));
+  assert.ok(papier.indexOf('REIMPRESSION') < papier.indexOf('#482'));
 });
 
 test('coupe le papier a la fin', () => {

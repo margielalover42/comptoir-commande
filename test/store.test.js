@@ -4,6 +4,7 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { ouvrirBase, ETAT } from '../src/store.js';
+import { numeroPourRang } from '../src/numero.js';
 
 let store;
 const T0 = new Date('2026-09-22T16:00:00Z');
@@ -15,31 +16,62 @@ const ARTICLES = [
 ];
 
 function poser(cleClient, journee = '2026-09-22', creeeA = T0) {
-  return store.creerCommande({ cleClient, journee, articles: ARTICLES, langue: 'fr', creeeA });
+  return store.creerCommande({
+    cleClient, journee, nom: 'Thomas', articles: ARTICLES, langue: 'fr', creeeA,
+  });
 }
 
 beforeEach(() => { store = ouvrirBase(':memory:'); });
 
 // ------------------------------------------------------------- les numeros
 
-test('les numeros se suivent a partir de 1', () => {
-  assert.equal(poser('a').commande.numero, 1);
-  assert.equal(poser('b').commande.numero, 2);
-  assert.equal(poser('c').commande.numero, 3);
-});
-
-test('chaque journee repart a 1', () => {
-  poser('a', '2026-09-22');
-  poser('b', '2026-09-22');
-  assert.equal(poser('c', '2026-09-23').commande.numero, 1);
+test('les numeros tiennent sur trois chiffres', () => {
+  for (const cle of ['a', 'b', 'c']) {
+    const { numero } = poser(cle).commande;
+    assert.ok(numero >= 100 && numero <= 999, `hors plage : ${numero}`);
+  }
 });
 
 test('les numeros d’une meme journee ne se repetent jamais', () => {
   const vus = new Set();
-  for (let i = 0; i < 40; i++) vus.add(poser('cle-' + i).commande.numero);
+  for (let i = 0; i < 120; i++) vus.add(poser('cle-' + i).commande.numero);
 
-  assert.equal(vus.size, 40);
-  assert.equal(Math.max(...vus), 40);
+  assert.equal(vus.size, 120, 'aucun numero servi deux fois');
+});
+
+test('les numeros ne se suivent pas', () => {
+  // Sinon autant garder 1, 2, 3 : c'est ce qu'on voulait eviter.
+  const suite = ['a', 'b', 'c', 'd', 'e'].map((c) => poser(c).commande.numero);
+
+  const consecutifs = suite.filter((n, i) => i > 0 && n - suite[i - 1] === 1);
+  assert.equal(consecutifs.length, 0, `suite trop previsible : ${suite}`);
+});
+
+test('deux journees ne donnent pas la meme suite', () => {
+  const lundi = ['a', 'b', 'c'].map((c) => poser(c, '2026-09-22').commande.numero);
+  const mardi = ['d', 'e', 'f'].map((c) => poser(c, '2026-09-23').commande.numero);
+
+  assert.notDeepEqual(lundi, mardi);
+});
+
+test('le decalage d’une journee survit a un redemarrage', () => {
+  // Il est conserve en base : sinon le melange repartirait ailleurs en plein
+  // service, et deux commandes pourraient tomber sur le meme numero.
+  const avant = poser('a').commande.numero;
+  const decalage = store.lireReglage('numero.decalage.2026-09-22');
+
+  assert.notEqual(decalage, null);
+  assert.equal(numeroPourRang(0, Number(decalage)), avant);
+});
+
+test('le rang, lui, se suit : c’est l’ordre d’arrivee', () => {
+  poser('a'); poser('b'); poser('c');
+
+  // L'ecran du comptoir trie dessus ; il doit rester croissant meme si les
+  // numeros affiches sautent dans tous les sens.
+  const numeros = store.commandesDuJour('2026-09-22').map((c) => c.numero);
+  assert.equal(numeros.length, 3);
+  assert.equal(new Set(numeros).size, 3);
 });
 
 // ----------------------------------------------------------- l'idempotence
@@ -170,13 +202,15 @@ test('reimprimer une commande inconnue ne fait rien', () => {
 // ------------------------------------------------------------------ lecture
 
 test('les commandes du jour sortent de la plus recente a la plus ancienne', () => {
-  poser('a');
-  poser('b');
-  poser('c');
+  const premiere = poser('a').commande.numero;
+  const deuxieme = poser('b').commande.numero;
+  const troisieme = poser('c').commande.numero;
 
+  // Tri sur l'ordre d'arrivee : les numeros affiches sont melanges, trier
+  // dessus donnerait au comptoir une liste dans le desordre.
   assert.deepEqual(
     store.commandesDuJour('2026-09-22').map((c) => c.numero),
-    [3, 2, 1],
+    [troisieme, deuxieme, premiere],
   );
 });
 

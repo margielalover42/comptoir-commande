@@ -12,7 +12,9 @@
  */
 
 import { DatabaseSync } from 'node:sqlite';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomInt } from 'node:crypto';
+
+import { numeroPourRang, decalageAleatoire } from './numero.js';
 
 /** Les etats possibles d'un travail d'impression. */
 export const ETAT = {
@@ -38,10 +40,16 @@ export function ouvrirBase(chemin) {
       id              TEXT PRIMARY KEY,
       cle_client      TEXT NOT NULL UNIQUE,
       journee         TEXT NOT NULL,
+      rang            INTEGER NOT NULL,
       numero          INTEGER NOT NULL,
+      nom             TEXT NOT NULL,
       articles_json   TEXT NOT NULL,
       langue          TEXT NOT NULL,
       creee_a         INTEGER NOT NULL,
+      -- rang est la position dans la journee, numero ce qu'on affiche.
+      -- Les deux contraintes disent la meme chose si le melange est correct :
+      -- la seconde est le garde-fou qui hurlerait s'il cessait de l'etre.
+      UNIQUE (journee, rang),
       UNIQUE (journee, numero)
     );
 
@@ -92,21 +100,28 @@ class Store {
    *
    * @returns {{commande: object, nouvelle: boolean}}
    */
-  creerCommande({ cleClient, journee, articles, langue, creeeA }) {
+  creerCommande({ cleClient, journee, nom, articles, langue, creeeA }) {
     const existante = this.commandeParCleClient(cleClient);
     if (existante) return { commande: existante, nouvelle: false };
 
     const id = randomUUID();
 
+    // BEGIN IMMEDIATE prend le verrou d'ecriture tout de suite : le calcul du
+    // rang et l'insertion forment un seul bloc, et deux commandes simultanees
+    // ne peuvent pas obtenir le meme numero.
     this.#db.exec('BEGIN IMMEDIATE');
     try {
-      // Le numero est calcule DANS l'insertion : le maximum du jour plus un.
-      // Deux commandes simultanees ne peuvent donc pas obtenir le meme,
-      // et la contrainte UNIQUE(journee, numero) reste le dernier garde-fou.
+      const rang = this.#db
+        .prepare('SELECT COALESCE(MAX(rang), -1) + 1 AS suivant FROM commandes WHERE journee = ?')
+        .get(journee).suivant;
+
+      const numero = numeroPourRang(rang, this.#decalageDuJour(journee));
+
       this.#db.prepare(`
-        INSERT INTO commandes (id, cle_client, journee, numero, articles_json, langue, creee_a)
-        VALUES (?, ?, ?, (SELECT COALESCE(MAX(numero), 0) + 1 FROM commandes WHERE journee = ?), ?, ?, ?)
-      `).run(id, cleClient, journee, journee, JSON.stringify(articles), langue, creeeA.getTime());
+        INSERT INTO commandes (id, cle_client, journee, rang, numero, nom, articles_json, langue, creee_a)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(id, cleClient, journee, rang, numero, nom,
+             JSON.stringify(articles), langue, creeeA.getTime());
 
       this.#creerTravail(id, 1, false, creeeA);
       this.#db.exec('COMMIT');
@@ -135,12 +150,17 @@ class Store {
     );
   }
 
-  /** Les commandes d'une journee de service, la plus recente en premier. */
+  /**
+   * Les commandes d'une journee de service, la plus recente en premier.
+   *
+   * On trie sur `rang`, pas sur `numero` : les numeros sont melanges, et
+   * trier dessus donnerait au comptoir une liste dans le desordre.
+   */
   commandesDuJour(journee) {
     return this.#db
-      .prepare('SELECT * FROM commandes WHERE journee = ? ORDER BY numero DESC')
+      .prepare('SELECT * FROM commandes WHERE journee = ? ORDER BY rang DESC')
       .all(journee)
-      .map((rang) => this.#enrichir(rang));
+      .map((ligne) => this.#enrichir(ligne));
   }
 
   /** Supprime les commandes anterieures a `journee`. Rien de personnel n'y est garde. */
@@ -151,6 +171,12 @@ class Store {
         DELETE FROM travaux WHERE commande_id IN (SELECT id FROM commandes WHERE journee < ?)
       `).run(journee);
       const { changes } = this.#db.prepare('DELETE FROM commandes WHERE journee < ?').run(journee);
+
+      // Les decalages des journees effacees ne servent plus a rien.
+      this.#db.prepare(`
+        DELETE FROM reglages WHERE cle LIKE 'numero.decalage.%' AND substr(cle, 17) < ?
+      `).run(journee);
+
       this.#db.exec('COMMIT');
       return Number(changes);
     } catch (erreur) {
@@ -243,6 +269,24 @@ class Store {
     return this.#creerTravail(commandeId, tentative + 1, true, maintenant);
   }
 
+  /**
+   * Le decalage de depart de la journee, tire au premier usage.
+   *
+   * Il est conserve : toutes les commandes d'une meme journee doivent
+   * parcourir le MEME melange, sinon deux d'entre elles pourraient tomber
+   * sur le meme numero. Le redemarrage du serveur en plein service ne doit
+   * donc pas le perdre — d'ou la base plutot que la memoire.
+   */
+  #decalageDuJour(journee) {
+    const cle = `numero.decalage.${journee}`;
+    const connu = this.lireReglage(cle);
+    if (connu !== null) return Number(connu);
+
+    const decalage = decalageAleatoire((max) => randomInt(max));
+    this.ecrireReglage(cle, decalage);
+    return decalage;
+  }
+
   #creerTravail(commandeId, tentative, reimpression, maintenant) {
     // L'identifiant part dans le XML vers l'imprimante, qui n'accepte que
     // 1 a 30 caracteres alphanumeriques : pas de tirets, donc pas d'UUID brut.
@@ -287,6 +331,7 @@ class Store {
       cleClient: rang.cle_client,
       journee: rang.journee,
       numero: rang.numero,
+      nom: rang.nom,
       articles: JSON.parse(rang.articles_json),
       langue: rang.langue,
       creeeA: new Date(rang.creee_a),

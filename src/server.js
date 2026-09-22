@@ -16,6 +16,7 @@ import { dirname, join } from 'node:path';
 
 import { config } from './config.js';
 import { CARTE } from './menu.js';
+import { listerPhotos, trouverPhoto, trouverVignette } from './galerie.js';
 import { ouvrirBase, ETAT } from './store.js';
 import { validerCommande, ErreurCommande, compterArticles } from './order.js';
 import { construireTicket } from './ticket.js';
@@ -32,8 +33,16 @@ const CLE_DERNIER_APPEL = 'imprimante.dernier_appel';
 const CLE_PAUSE = 'commandes.en_pause';
 
 export function creerApp({ store, maintenant = () => new Date() }) {
-  const pages = chargerPages();
   const limiteur = new Limiteur(config.limiteCommandes, config.limiteFenetreMs);
+
+  /* En production les pages sont lues une fois : elles ne changent plus, et
+     relire deux fichiers a chaque requete serait du gaspillage. En
+     developpement on relit a chaque fois, pour qu'une retouche du HTML soit
+     visible d'un simple rafraichissement, sans redemarrer le serveur. */
+  const enCache = chargerPages();
+  const pages = config.production ? enCache : new Proxy({}, {
+    get: (_, nom) => chargerPages()[nom],
+  });
 
   return async function traiter(req, res) {
     try {
@@ -69,6 +78,21 @@ async function router(req, res, ctx) {
   // --- la page du client
   if (req.method === 'GET' && (chemin === '/' || chemin === '/index.html')) {
     return envoyerHtml(res, pages.client);
+  }
+
+  // --- les photos de la galerie
+  // La vignette d'abord : son chemin est plus long, il doit etre teste avant.
+  const vignette = chemin.match(/^\/galerie\/vignettes\/([^/]+)$/);
+  if (req.method === 'GET' && vignette) {
+    return servirPhoto(res, decodeURIComponent(vignette[1]), trouverVignette);
+  }
+
+  // `[^/]+` et non `.+` : un nom de photo ne contient jamais de barre
+  // oblique, et l'exclure ferme la porte a une traversee de repertoire avant
+  // meme d'arriver a la verification.
+  const photo = chemin.match(/^\/galerie\/([^/]+)$/);
+  if (req.method === 'GET' && photo) {
+    return servirPhoto(res, decodeURIComponent(photo[1]), trouverPhoto);
   }
 
   if (req.method === 'GET' && chemin === '/api/etat') {
@@ -136,6 +160,7 @@ async function posterCommande(req, res, { store, maintenant, limiteur }) {
   const { commande, nouvelle } = store.creerCommande({
     cleClient: valide.clientOrderId,
     journee: journeeDeService(now, config.fuseau),
+    nom: valide.nom,
     articles: valide.articles,
     langue: valide.langue,
     creeeA: now,
@@ -251,11 +276,39 @@ async function routerComptoir(req, res, { store, maintenant, pages }, reste) {
 
 // ------------------------------------------------------------------ communs
 
+/**
+ * Sert une photo de la galerie.
+ *
+ * `trouverPhoto` ne rend un chemin que si le nom figure exactement dans le
+ * dossier : rien de ce que demande le client ne sert a construire un chemin.
+ */
+function servirPhoto(res, nom, chercher) {
+  const photo = chercher(nom);
+  if (!photo) return envoyerJson(res, 404, { erreur: 'Photo introuvable.' });
+
+  let contenu;
+  try {
+    contenu = readFileSync(photo.chemin);
+  } catch {
+    return envoyerJson(res, 404, { erreur: 'Photo introuvable.' });
+  }
+
+  res.writeHead(200, {
+    'Content-Type': photo.type,
+    'Content-Length': contenu.length,
+    // Les photos changent rarement ; le telephone du client ne doit pas les
+    // retelecharger a chaque ouverture du menu.
+    'Cache-Control': 'public, max-age=3600',
+  });
+  res.end(contenu);
+}
+
 /** Ce que le telephone et le comptoir ont le droit de voir d'une commande. */
 function vueCommande(commande) {
   return {
     id: commande.id,
     numero: commande.numero,
+    nom: commande.nom,
     etatImpression: commande.etatImpression,
     codeErreur: commande.codeErreur,
     total: compterArticles(commande.articles),
@@ -303,7 +356,10 @@ function chargerPages() {
   return {
     client: client.replace(
       marque,
-      `<script>window.COMPTOIR_MENU=${jsonSurEchappe(CARTE)};</script>`,
+      '<script>'
+      + `window.COMPTOIR_MENU=${jsonSurEchappe(CARTE)};`
+      + `window.COMPTOIR_GALERIE=${jsonSurEchappe(listerPhotos())};`
+      + '</script>',
     ),
     comptoir: readFileSync(join(RACINE, 'public', 'comptoir.html'), 'utf8'),
   };

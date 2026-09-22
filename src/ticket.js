@@ -50,9 +50,16 @@ export function construireTicket(commande, options = {}) {
   ecrire('C U I S I N E');
   l.push('<feed line="1"/>');
 
-  // Le numero, en tres gros : c'est ce que le client dira au comptoir.
+  // Le numero, en tres gros : c'est ce que le comptoir appellera.
   l.push('<text width="3" height="3"/>', '<text em="true"/>');
   ecrire(`#${commande.numero}`);
+
+  // Le prenom juste en dessous, en gros lui aussi : le comptoir appelle
+  // l'un OU l'autre, et doit pouvoir lire les deux d'un coup d'oeil sur un
+  // ticket punaise au passe-plat.
+  l.push('<text width="2" height="2"/>');
+  ecrire(commande.nom.toUpperCase());
+
   l.push('<text em="false"/>', '<text width="1" height="1"/>');
   ecrire(horodatageLisible(commande.creeeA, config.fuseau));
 
